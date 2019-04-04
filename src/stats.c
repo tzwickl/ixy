@@ -1,4 +1,5 @@
 #include "stats.h"
+#include "libixy-vfio.h"
 
 #include <stdio.h>
 

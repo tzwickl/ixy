@@ -10,6 +10,10 @@ void vfio_enable_dma(int device_fd);
 // -1 on error
 int vfio_init(const char* pci_addr);
 
+int vfio_enable_msi(int device_fd);
+
+int vfio_disable_msi(int device_fd);
+
 int vfio_setup_interrupt(int device_fd);
 
 int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout);

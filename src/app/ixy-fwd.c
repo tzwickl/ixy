@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <libixy-vfio.h>
 
 #include "stats.h"
 #include "log.h"
@@ -46,7 +47,7 @@ int main(int argc, char* argv[]) {
 	uint64_t counter = 0;
 	while (true) {
 		forward(dev1, 0, dev2, 0);
-		forward(dev2, 0, dev1, 0);
+		// forward(dev2, 0, dev1, 0);
 
 		// don't poll the time unnecessarily
 		if ((counter++ & 0xFFF) == 0) {

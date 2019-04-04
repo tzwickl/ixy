@@ -37,9 +37,13 @@ void vfio_enable_dma(int device_fd) {
 	assert(pwrite(device_fd, &dma, 2, conf_reg.offset + command_register_offset) == 2);
 }
 
-int vfio_enable_msi(int device_fd, int event_fd) {
+int vfio_enable_msi(int device_fd) {
+	info("Enable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
 	int *fd_ptr;
+
+	// setup event fd
+	int event_fd = eventfd(0, NULL);
 
     struct vfio_irq_set * irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);
@@ -52,10 +56,11 @@ int vfio_enable_msi(int device_fd, int event_fd) {
 
 	check_err(ioctl(device_fd, VFIO_DEVICE_SET_IRQS, irq_set), "enable MSI interrupts");
 
-	return 0;
+	return event_fd;
 }
 
-int vfio_disable_msi(int device_fd, int event_fd) {
+int vfio_disable_msi(int device_fd) {
+	info("Disable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
 
 	struct vfio_irq_set * irq_set = (struct vfio_irq_set *) irq_set_buf;
@@ -71,6 +76,7 @@ int vfio_disable_msi(int device_fd, int event_fd) {
 }
 
 int vfio_setup_interrupt(int device_fd) {
+	info("Setup VFIO Interrupts");
 	struct vfio_device_info dev_info = {.argsz = sizeof(dev_info)};
 	check_err(ioctl(device_fd, VFIO_DEVICE_GET_INFO, &dev_info), "fetch VFIO Device Info");
 
@@ -82,8 +88,6 @@ int vfio_setup_interrupt(int device_fd) {
 	// read config
 	__u8 config[256];
 	assert(pread(device_fd, config, sizeof(config), conf_reg.offset) == sizeof(config));
-
-    int event_fd;
 
 
 	for (int i = 0; i < dev_info.num_irqs; i++) {
@@ -104,25 +108,10 @@ int vfio_setup_interrupt(int device_fd) {
         } else {
             continue;
 		}
-		debug("Count %d", irq.count);
-		if (irq.flags & VFIO_IRQ_INFO_EVENTFD) {
-			debug("VFIO_IRQ_INFO_EVENTFD");
-		}
-		if (irq.flags & VFIO_IRQ_INFO_MASKABLE) {
-			debug("VFIO_IRQ_INFO_MASKABLE");
-		}
-		if (irq.flags & VFIO_IRQ_INFO_AUTOMASKED) {
-			debug("VFIO_IRQ_INFO_AUTOMASKED");
-		}
-		if (irq.flags & VFIO_IRQ_INFO_NORESIZE) {
-			debug("VFIO_IRQ_INFO_NORESIZE");
-		}
-
-        /* set up an eventfd for interrupts */
-        event_fd = eventfd(0, NULL);
-        vfio_enable_msi(device_fd, event_fd);
+		return i;
 	}
-	return event_fd;
+
+	return -1;
 }
 
 int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout)

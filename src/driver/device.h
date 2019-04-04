@@ -30,6 +30,13 @@ struct device_stats;
 	(type*)((char*)__mptr - offsetof(type, member));\
 })
 
+struct interrupt {
+    int vfio_event_fd; // event fd
+    int vfio_epoll_fd; // epoll fd
+    bool interrupt_enabled;
+    long interrupt_threshold;
+};
+
 struct ixy_device {
 	const char* pci_addr;
 	const char* driver_name;
@@ -42,10 +49,8 @@ struct ixy_device {
 	uint32_t (*get_link_speed) (const struct ixy_device* dev);
 	bool vfio;
 	int vfio_fd; // device fd
-	int vfio_eventfd; // device fd
-	int vfio_epollfd; // device fd
-	bool interrupt;
-	long threshold;
+	int interrupt_type;
+	struct interrupt* interrupts;
 };
 
 struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues);
