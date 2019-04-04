@@ -24,6 +24,9 @@
 
 ssize_t MIN_DMA_MEMORY = 4096; // we can not allocate less than page_size memory
 
+// One central Epoll File Descriptor for all VFIO devices so we wake up all devices if a new packet is received
+static int epoll_fd = 0;
+
 void vfio_enable_dma(int device_fd) {
 	// write to the command register (offset 4) in the PCIe config space
 	int command_register_offset = 4;
@@ -45,7 +48,7 @@ int vfio_enable_msi(int device_fd) {
 	int *fd_ptr;
 
 	// setup event fd
-	int event_fd = eventfd(0, NULL);
+	int event_fd = eventfd(0, 0);
 
     struct vfio_irq_set * irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);
@@ -87,7 +90,7 @@ int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 	int *fd_ptr;
 
 	// setup event fd
-	int event_fd = eventfd(0, NULL);
+    int event_fd = eventfd(0, 0);
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);;
@@ -150,7 +153,7 @@ int vfio_setup_interrupt(int device_fd) {
 
         /* if this vector cannot be used with eventfd continue with next*/
         if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
-            error("IRQ doesn't support EventFD");
+            error("IRQ doesn't support Event FD");
             continue;
         }
 
@@ -183,15 +186,18 @@ int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout)
     return rc;
 }
 
-int vfio_epoll_ctl(int eventfd) {
+int vfio_epoll_ctl(int event_fd) {
     struct epoll_event event;
     event.events = EPOLLIN;
-    event.data.fd = eventfd;
-    int epollfd = check_err(epoll_create1(0), "to created epoll");
+    event.data.fd = event_fd;
 
-    check_err(epoll_ctl(epollfd, EPOLL_CTL_ADD, eventfd, &event), "to initialize epoll");
+    if (epoll_fd == 0) {
+        epoll_fd = check_err(epoll_create1(0), "to created epoll");
+    }
 
-    return epollfd;
+    check_err(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &event), "to initialize epoll");
+
+    return epoll_fd;
 }
 
 // returns the devices file descriptor or -1 on error

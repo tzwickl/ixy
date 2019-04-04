@@ -22,7 +22,7 @@ int vfio_setup_interrupt(int device_fd);
 
 int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout);
 
-int vfio_epoll_ctl(int eventfd);
+int vfio_epoll_ctl(int event_fd);
 
 int vfio_init(const char* pci_addr);
 

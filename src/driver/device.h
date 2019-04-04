@@ -34,7 +34,6 @@ struct interrupt {
     int vfio_event_fd; // event fd
     int vfio_epoll_fd; // epoll fd
     bool interrupt_enabled;
-    long interrupt_threshold;
 };
 
 struct ixy_device {

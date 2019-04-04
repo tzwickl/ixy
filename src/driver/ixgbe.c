@@ -29,6 +29,8 @@ const int MIN_MEMPOOL_ENTRIES = 4096;
 
 const int TX_CLEAN_BATCH = 32;
 
+static int interrupt_threshold = 100000000l;
+
 // allocated for each rx queue, keeps state for the receive function
 struct ixgbe_rx_queue {
 	volatile union ixgbe_adv_rx_desc* descriptors;
@@ -55,30 +57,19 @@ struct ixgbe_tx_queue {
 /**
  * ixgbe_set_ivar - set the IVAR registers, mapping interrupt causes to vectors
  * @dev: pointer to device
- * @direction: 0 for Rx, 1 for Tx, -1 for other causes
+ * @direction: 0 for Rx, 1 for Tx
  * @queue: queue to map the corresponding interrupt to
  * @msix_vector: the vector to map to the corresponding queue
  *
  */
 static void set_ivar(struct ixgbe_device* dev, s8 direction, u8 queue, u8 msix_vector) {
 	u32 ivar, index;
-	if (direction == -1) {
-		// other causes
-		msix_vector |= IXGBE_IVAR_ALLOC_VAL;
-		index = ((queue & 1) * 8);
-		ivar = get_reg32(dev->addr, IXGBE_IVAR_MISC);
-		ivar &= ~(0xFF << index);
-		ivar |= (msix_vector << index);
-		set_reg32(dev->addr, IXGBE_IVAR_MISC, ivar);
-	} else {
-		// tx or rx causes
-		msix_vector |= IXGBE_IVAR_ALLOC_VAL;
-		index = ((16 * (queue & 1)) + (8 * direction));
-		ivar = get_reg32(dev->addr, IXGBE_IVAR(queue >> 1));
-		ivar &= ~(0xFF << index);
-		ivar |= (msix_vector << index);
-		set_reg32(dev->addr, IXGBE_IVAR(queue >> 1), ivar);
-	}
+	msix_vector |= IXGBE_IVAR_ALLOC_VAL;
+	index = ((16 * (queue & 1)) + (8 * direction));
+	ivar = get_reg32(dev->addr, IXGBE_IVAR(queue >> 1));
+	ivar &= ~(0xFF << index);
+	ivar |= (msix_vector << index);
+	set_reg32(dev->addr, IXGBE_IVAR(queue >> 1), ivar);
 }
 
 /**
@@ -167,7 +158,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 3: The EIAC[n] registers should be set to auto clear for transmit and receive interrupt
 	// causes (for best performance). The EIAC bits that control the other and TCP timer
 	// interrupt causes should be set to 0b (no auto clear).
-	set_reg32(dev->addr, IXGBE_EIAC, 0x00000000);
+	set_reg32(dev->addr, IXGBE_EIAC, IXGBE_EICR_RTX_QUEUE);
 
 	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
 
@@ -190,6 +181,7 @@ static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 			enable_msi_interrupt(dev, queue_id);
 			break;
 		default:
+			error("Interrupt type not supported: %d", dev->ixy.interrupt_type);
 			return;
 	}
 }
@@ -220,6 +212,7 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 			}
 			break;
 		default:
+			error("Interrupt type not supported: %d", dev->ixy.interrupt_type);
 			return;
 	}
 }
@@ -619,12 +612,12 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	}
 
 	if (buf_index == 0) {
-		ixy->interrupts[queue_id].interrupt_threshold--;
-		if (ixy->interrupts[queue_id].interrupt_threshold <= 0) {
+        interrupt_threshold--;
+		if (interrupt_threshold <= 0) {
 			enable_interrupt(dev, queue_id);
 		}
 	} else {
-		ixy->interrupts[queue_id].interrupt_threshold = 100000000l;
+        interrupt_threshold = 100000000l;
 	}
 
 	return buf_index; // number of packets stored in bufs; buf_index points to the next index
