@@ -204,18 +204,23 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 	int vfio_event_fd;
 	switch (dev->ixy.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
-			vfio_event_fd = vfio_enable_msix(dev->ixy.vfio_fd, 1);
+			for (int rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
+				vfio_event_fd = vfio_enable_msix(dev->ixy.vfio_fd, rx_queue);
+				int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
+				dev->ixy.interrupts[rx_queue].vfio_event_fd = vfio_event_fd;
+				dev->ixy.interrupts[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
+			}
 			break;
 		case VFIO_PCI_MSI_IRQ_INDEX:
 			vfio_event_fd = vfio_enable_msi(dev->ixy.vfio_fd);
+			int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
+			for (int rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
+				dev->ixy.interrupts[rx_queue].vfio_event_fd = vfio_event_fd;
+				dev->ixy.interrupts[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
+			}
 			break;
 		default:
 			return;
-	}
-	int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
-	for (int rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
-		dev->ixy.interrupts[rx_queue].vfio_event_fd = vfio_event_fd;
-		dev->ixy.interrupts[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 	}
 }
 

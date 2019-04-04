@@ -82,18 +82,15 @@ int vfio_disable_msi(int device_fd) {
  */
 int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 	info("Enable MSIX Interrupts");
-	int len, ret;
 	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
 	struct vfio_irq_set *irq_set;
 	int *fd_ptr;
-
-	len = sizeof(irq_set_buf);
 
 	// setup event fd
 	int event_fd = eventfd(0, NULL);
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
-	irq_set->argsz = len;
+	irq_set->argsz = sizeof(irq_set_buf);;
 	if (!interrupt_vector)
 		interrupt_vector = 1;
 	else if (interrupt_vector > MAX_INTERRUPT_VECTORS)
@@ -118,12 +115,9 @@ int vfio_disable_msix(int device_fd) {
 	info("Disable MSIX Interrupts");
 	struct vfio_irq_set *irq_set;
 	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
-	int len, ret;
-
-	len = sizeof(struct vfio_irq_set);
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
-	irq_set->argsz = len;
+	irq_set->argsz = sizeof(struct vfio_irq_set);;
 	irq_set->count = 0;
 	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
 	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
@@ -131,7 +125,7 @@ int vfio_disable_msix(int device_fd) {
 
 	check_err(ioctl(device_fd, VFIO_DEVICE_SET_IRQS, irq_set), "disable MSIX interrupt");
 
-	return ret;
+	return 0;
 }
 
 int vfio_setup_interrupt(int device_fd) {
