@@ -19,6 +19,8 @@
 #include <driver/device.h>
 
 #define IRQ_SET_BUF_LEN  (sizeof(struct vfio_irq_set) + sizeof(int))
+#define MAX_INTERRUPT_VECTORS 32
+#define MSIX_IRQ_SET_BUF_LEN (sizeof(struct vfio_irq_set) + sizeof(int) * (MAX_INTERRUPT_VECTORS + 1))
 
 ssize_t MIN_DMA_MEMORY = 4096; // we can not allocate less than page_size memory
 
@@ -75,6 +77,63 @@ int vfio_disable_msi(int device_fd) {
 	return 0;
 }
 
+/**
+ *
+ */
+int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
+	info("Enable MSIX Interrupts");
+	int len, ret;
+	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
+	struct vfio_irq_set *irq_set;
+	int *fd_ptr;
+
+	len = sizeof(irq_set_buf);
+
+	// setup event fd
+	int event_fd = eventfd(0, NULL);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	if (!interrupt_vector)
+		interrupt_vector = 1;
+	else if (interrupt_vector > MAX_INTERRUPT_VECTORS)
+		interrupt_vector = MAX_INTERRUPT_VECTORS + 1;
+
+	irq_set->count = interrupt_vector;
+	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
+	irq_set->start = 0;
+	fd_ptr = (int *) &irq_set->data;
+	fd_ptr[0] = event_fd;
+
+	check_err(ioctl(device_fd, VFIO_DEVICE_SET_IRQS, irq_set), "enable MSIX interrupt");
+
+	return event_fd;
+}
+
+/**
+ *
+ */
+int vfio_disable_msix(int device_fd) {
+	info("Disable MSIX Interrupts");
+	struct vfio_irq_set *irq_set;
+	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
+	int len, ret;
+
+	len = sizeof(struct vfio_irq_set);
+
+	irq_set = (struct vfio_irq_set *) irq_set_buf;
+	irq_set->argsz = len;
+	irq_set->count = 0;
+	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
+	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
+	irq_set->start = 0;
+
+	check_err(ioctl(device_fd, VFIO_DEVICE_SET_IRQS, irq_set), "disable MSIX interrupt");
+
+	return ret;
+}
+
 int vfio_setup_interrupt(int device_fd) {
 	info("Setup VFIO Interrupts");
 	struct vfio_device_info dev_info = {.argsz = sizeof(dev_info)};
@@ -90,7 +149,7 @@ int vfio_setup_interrupt(int device_fd) {
 	assert(pread(device_fd, config, sizeof(config), conf_reg.offset) == sizeof(config));
 
 
-	for (int i = 0; i < dev_info.num_irqs; i++) {
+	for (int i = VFIO_PCI_MSIX_IRQ_INDEX; i >= 0; i--) {
 		struct vfio_irq_info irq = { .argsz = sizeof(irq), .index = i };
 
 		check_err(ioctl(device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq), "get IRQ Info");
@@ -101,13 +160,6 @@ int vfio_setup_interrupt(int device_fd) {
             continue;
         }
 
-		if (i == VFIO_PCI_MSIX_IRQ_INDEX) {
-            debug("VFIO_PCI_MSIX_IRQ_INDEX");
-		} else if (i == VFIO_PCI_MSI_IRQ_INDEX) {
-            debug("VFIO_PCI_MSI_IRQ_INDEX");
-        } else {
-            continue;
-		}
 		return i;
 	}
 

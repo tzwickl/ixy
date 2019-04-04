@@ -14,6 +14,10 @@ int vfio_enable_msi(int device_fd);
 
 int vfio_disable_msi(int device_fd);
 
+int vfio_enable_msix(int device_fd, uint32_t interrupt_vector);
+
+int vfio_disable_msix(int device_fd);
+
 int vfio_setup_interrupt(int device_fd);
 
 int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout);

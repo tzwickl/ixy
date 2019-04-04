@@ -131,6 +131,9 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// register by setting the IVAR[n] registers.
 	set_ivar(dev, 0, queue_id, 0);
 
+	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
+	// descriptor minimum threshold interrupt
+
 	// Step 3: All interrupts should be set to 0b (no auto clear in the EIAC register). Following an
 	// interrupt, software might read the EICR register to check for the interrupt causes.
 	set_reg32(dev->addr, IXGBE_EIAC, 0x00000000);
@@ -150,9 +153,38 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	info("Using MSI interrupts");
 }
 
+/**
+ *
+ */
+static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
+	//throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
+	set_ivar(dev, 0, queue_id, queue_id);
+
+	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
+	// descriptor minimum threshold interrupt
+
+	// Step 3: The EIAC[n] registers should be set to auto clear for transmit and receive interrupt
+	// causes (for best performance). The EIAC bits that control the other and TCP timer
+	// interrupt causes should be set to 0b (no auto clear).
+	set_reg32(dev->addr, IXGBE_EIAC, 0x00000000);
+
+	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
+
+	// Step 5: Set the interrupt throttling in EITR[n] and GPIE according to the preferred mode of operation.
+
+	// Step 6: Software enables the required interrupt causes by setting the EIMS register
+	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
+	mask |= (1 << queue_id);
+	set_reg32(dev->addr, IXGBE_EIMS, mask);
+	dev->ixy.interrupts[queue_id].interrupt_enabled = true;
+	info("Using MSIX interrupts");
+}
+
 static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	switch (dev->ixy.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
+			enable_msix_interrupt(dev, queue_id);
 			break;
 		case VFIO_PCI_MSI_IRQ_INDEX:
 			enable_msi_interrupt(dev, queue_id);
@@ -172,7 +204,7 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 	int vfio_event_fd;
 	switch (dev->ixy.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
-			vfio_event_fd = vfio_enable_msi(dev->ixy.vfio_fd);
+			vfio_event_fd = vfio_enable_msix(dev->ixy.vfio_fd, 1);
 			break;
 		case VFIO_PCI_MSI_IRQ_INDEX:
 			vfio_event_fd = vfio_enable_msi(dev->ixy.vfio_fd);
