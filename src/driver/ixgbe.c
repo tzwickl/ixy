@@ -57,11 +57,10 @@ struct ixgbe_tx_queue {
 
 /**
  * ixgbe_set_ivar - set the IVAR registers, mapping interrupt causes to vectors
- * @dev: pointer to device
- * @direction: 0 for Rx, 1 for Tx
- * @queue: queue to map the corresponding interrupt to
- * @msix_vector: the vector to map to the corresponding queue
- *
+ * @param dev pointer to device
+ * @param direction 0 for Rx, 1 for Tx
+ * @param queue queue to map the corresponding interrupt to
+ * @param msix_vector the vector to map to the corresponding queue
  */
 static void set_ivar(struct ixgbe_device* dev, s8 direction, u8 queue, u8 msix_vector) {
 	u32 ivar, index;
@@ -74,7 +73,8 @@ static void set_ivar(struct ixgbe_device* dev, s8 direction, u8 queue, u8 msix_v
 }
 
 /**
- *
+ * Clear all interrupt masks for all queues.
+ * @param dev The device.
  */
 static void clear_interrupts(struct ixgbe_device *dev) {
     // Clear interrupt mask
@@ -83,7 +83,9 @@ static void clear_interrupts(struct ixgbe_device *dev) {
 }
 
 /**
- *
+ * Clear interrupt for queue.
+ * @param dev The device.
+ * @param queue_id The ID of the queue to clear.
  */
 static void clear_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
     // Clear interrupt mask
@@ -92,8 +94,8 @@ static void clear_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 }
 
 /**
- * section 4.6.3.1 - disable all interrupts
- * @param dev
+ * Disable all interrupts for all queues.
+ * @param dev The device.
  */
 static void disable_interrupts(struct ixgbe_device *dev) {
 	// Clear interrupt mask to stop from interrupts being generated
@@ -104,6 +106,7 @@ static void disable_interrupts(struct ixgbe_device *dev) {
 /**
  * Disable interrupt for queue
  * @param dev
+ * @param queue_id The ID of the queue to disable.
  */
 static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 	// Clear interrupt mask to stop from interrupts being generated
@@ -116,7 +119,9 @@ static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 }
 
 /**
- *
+ * Enable MSI interrupt for queue.
+ * @param dev The device.
+ * @param queue_id The ID of the queue to enable.
  */
 static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
@@ -146,7 +151,9 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 }
 
 /**
- *
+ * Enable MSI-X interrupt for queue.
+ * @param dev The device.
+ * @param queue_id The ID of the queue to enable.
  */
 static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
@@ -173,6 +180,11 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	info("Using MSIX interrupts");
 }
 
+/**
+ * Enable MSI or MSI-X interrupt for queue depending on which is supported (Prefer MSI-x).
+ * @param dev The device.
+ * @param queue_id The ID of the queue to enable.
+ */
 static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	switch (dev->ixy.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
@@ -188,30 +200,31 @@ static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 }
 
 /**
- * Setup interrupts
- * @param dev
+ * Setup interrupts by enabling VFIO interrupts.
+ * @param dev The device.
  */
 static void setup_interrupts(struct ixgbe_device *dev) {
 	dev->ixy.interrupts = (struct ixy_interrupt*) malloc(sizeof(struct ixy_interrupt));
 	dev->ixy.interrupt_type = vfio_setup_interrupt(dev->ixy.vfio_fd);
-	int vfio_event_fd;
 	switch (dev->ixy.interrupt_type) {
-		case VFIO_PCI_MSIX_IRQ_INDEX:
-			for (int rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
-				vfio_event_fd = vfio_enable_msix(dev->ixy.vfio_fd, rx_queue);
+		case VFIO_PCI_MSIX_IRQ_INDEX: {
+			for (uint32_t rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
+				int vfio_event_fd = vfio_enable_msix(dev->ixy.vfio_fd, rx_queue);
 				int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
 				dev->ixy.interrupts[rx_queue].vfio_event_fd = vfio_event_fd;
 				dev->ixy.interrupts[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 			}
 			break;
-		case VFIO_PCI_MSI_IRQ_INDEX:
-			vfio_event_fd = vfio_enable_msi(dev->ixy.vfio_fd);
+		}
+		case VFIO_PCI_MSI_IRQ_INDEX: {
+			int vfio_event_fd = vfio_enable_msi(dev->ixy.vfio_fd);
 			int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
-			for (int rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
+			for (uint32_t rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
 				dev->ixy.interrupts[rx_queue].vfio_event_fd = vfio_event_fd;
 				dev->ixy.interrupts[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 			}
 			break;
+		}
 		default:
 			error("Interrupt type not supported: %d", dev->ixy.interrupt_type);
 			return;
@@ -563,7 +576,7 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
 
 	if (hybrid_interrupt.interrupt_enabled) {
-		vfio_epoll_wait(ixy->interrupts[queue_id].vfio_event_fd, ixy->interrupts[queue_id].vfio_epoll_fd, 10, -1);
+		vfio_epoll_wait(ixy->interrupts[queue_id].vfio_epoll_fd, 10, -1);
 		disable_interrupt(dev, queue_id);
         hybrid_interrupt.last_time_checked = get_monotonic_time();
         hybrid_interrupt.interrupt_enabled = false;

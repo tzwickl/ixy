@@ -42,6 +42,11 @@ void vfio_enable_dma(int device_fd) {
 	assert(pwrite(device_fd, &dma, 2, conf_reg.offset + command_register_offset) == 2);
 }
 
+/**
+ * Enable VFIO MSI interrupts.
+ * @param device_fd The VFIO file descriptor.
+ * @return The event file descriptor.
+ */
 int vfio_enable_msi(int device_fd) {
 	info("Enable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
@@ -64,6 +69,11 @@ int vfio_enable_msi(int device_fd) {
 	return event_fd;
 }
 
+/**
+ * Disable VFIO MSI interrupts.
+ * @param device_fd The VFIO file descriptor.
+ * @return 0 on success.
+ */
 int vfio_disable_msi(int device_fd) {
 	info("Disable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
@@ -81,7 +91,9 @@ int vfio_disable_msi(int device_fd) {
 }
 
 /**
- *
+ * Enable VFIO MSI-X interrupts.
+ * @param device_fd The VFIO file descriptor.
+ * @return The event file descriptor.
  */
 int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 	info("Enable MSIX Interrupts");
@@ -112,7 +124,9 @@ int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 }
 
 /**
- *
+ * Disable VFIO MSI-X interrupts.
+ * @param device_fd The VFIO file descriptor.
+ * @return 0 on success.
  */
 int vfio_disable_msix(int device_fd) {
 	info("Disable MSIX Interrupts");
@@ -131,6 +145,11 @@ int vfio_disable_msix(int device_fd) {
 	return 0;
 }
 
+/**
+ * Setup VFIO interrupts by detecting which interrupts this device supports.
+ * @param device_fd The VFIO file descriptor.
+ * @return The supported interrupt.
+ */
 int vfio_setup_interrupt(int device_fd) {
 	info("Setup VFIO Interrupts");
 	struct vfio_device_info dev_info = {.argsz = sizeof(dev_info)};
@@ -163,18 +182,30 @@ int vfio_setup_interrupt(int device_fd) {
 	return -1;
 }
 
-int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout)
+/**
+ * Waits for events on the epoll instance referred to by the file descriptor epoll_fd.
+ * The memory area pointed to by events will contain the events that will be available for the caller.
+ * Up to maxevents are returned by epoll_wait.
+ * @param epoll_fd The epoll file descriptor.
+ * @param maxevents The maximum number of events to return. The maxevents argument must be greater than zero.
+ * @param timeout The timeout argument specifies the minimum number of milliseconds that epoll_wait will block.
+ * Specifying a timeout of -1 causes epoll_wait to block indefinitely,
+ * while specifying a timeout equal to zero cause epoll_wait to return immediately, even if no events are available.
+ * @return Number of ready file descriptors.
+ */
+int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout)
 {
     struct epoll_event events[maxevents];
     int rc;
 
     while (1) {
     	info("Waiting for packets...");
-        rc = check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
+        rc = (int) check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
         if (rc > 0) {
             /* epoll_wait has at least one fd ready to read */
             for (int i = 0; i < rc; i++) {
                 uint64_t val;
+                // read event file descriptor to clear interrupt.
                 check_err(read(events[i].data.fd, &val, sizeof(val)), "to read event");
             }
             break;
@@ -187,13 +218,18 @@ int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout)
     return rc;
 }
 
+/**
+ * Add event file descriptor to epoll.
+ * @param event_fd The event file descriptor to add.
+ * @return The epoll file descriptor.
+ */
 int vfio_epoll_ctl(int event_fd) {
     struct epoll_event event;
     event.events = EPOLLIN;
     event.data.fd = event_fd;
 
     if (epoll_fd == 0) {
-        epoll_fd = check_err(epoll_create1(0), "to created epoll");
+        epoll_fd = (int) check_err(epoll_create1(0), "to created epoll");
     }
 
     check_err(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &event), "to initialize epoll");

@@ -20,7 +20,7 @@ int vfio_disable_msix(int device_fd);
 
 int vfio_setup_interrupt(int device_fd);
 
-int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout);
+int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout);
 
 int vfio_epoll_ctl(int event_fd);
 
