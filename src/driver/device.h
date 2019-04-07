@@ -30,7 +30,7 @@ struct device_stats;
 	(type*)((char*)__mptr - offsetof(type, member));\
 })
 
-struct interrupt {
+struct ixy_interrupt {
     int vfio_event_fd; // event fd
     int vfio_epoll_fd; // epoll fd
     bool interrupt_enabled;
@@ -49,7 +49,7 @@ struct ixy_device {
 	bool vfio;
 	int vfio_fd; // device fd
 	int interrupt_type;
-	struct interrupt* interrupts;
+	struct ixy_interrupt* interrupts;
 };
 
 struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues);

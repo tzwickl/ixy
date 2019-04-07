@@ -15,6 +15,7 @@
 
 #include "libixy-vfio.h"
 #include "device.h"
+#include "interrupts.h"
 
 const char* driver_name = "ixy-ixgbe";
 
@@ -29,7 +30,7 @@ const int MIN_MEMPOOL_ENTRIES = 4096;
 
 const int TX_CLEAN_BATCH = 32;
 
-static int interrupt_threshold = 100000000l;
+static struct interrupts hybrid_interrupt = {0, 1000l * 1000l * 1000l, 0, 0};
 
 // allocated for each rx queue, keeps state for the receive function
 struct ixgbe_rx_queue {
@@ -191,7 +192,7 @@ static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  * @param dev
  */
 static void setup_interrupts(struct ixgbe_device *dev) {
-	dev->ixy.interrupts = (struct interrupt*) malloc(sizeof(struct interrupt));
+	dev->ixy.interrupts = (struct ixy_interrupt*) malloc(sizeof(struct ixy_interrupt));
 	dev->ixy.interrupt_type = vfio_setup_interrupt(dev->ixy.vfio_fd);
 	int vfio_event_fd;
 	switch (dev->ixy.interrupt_type) {
@@ -561,9 +562,11 @@ void ixgbe_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {
 	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
 
-	if (ixy->interrupts[queue_id].interrupt_enabled) {
+	if (hybrid_interrupt.interrupt_enabled) {
 		vfio_epoll_wait(ixy->interrupts[queue_id].vfio_event_fd, ixy->interrupts[queue_id].vfio_epoll_fd, 10, -1);
 		disable_interrupt(dev, queue_id);
+        hybrid_interrupt.last_time_checked = get_monotonic_time();
+        hybrid_interrupt.interrupt_enabled = false;
 	}
 
 	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + queue_id;
@@ -611,13 +614,16 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		queue->rx_index = rx_index;
 	}
 
-	if (buf_index == 0) {
-        interrupt_threshold--;
-		if (interrupt_threshold <= 0) {
-			enable_interrupt(dev, queue_id);
-		}
-	} else {
-        interrupt_threshold = 100000000l;
+	hybrid_interrupt.rx_pkts += buf_index;
+
+	uint64_t time = get_monotonic_time();
+	if (time - hybrid_interrupt.last_time_checked > hybrid_interrupt.interval) {
+		// every second
+		check_interrupt(&hybrid_interrupt, time);
+	}
+
+	if (hybrid_interrupt.interrupt_enabled) {
+		enable_interrupt(dev, queue_id);
 	}
 
 	return buf_index; // number of packets stored in bufs; buf_index points to the next index

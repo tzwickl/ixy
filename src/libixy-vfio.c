@@ -173,9 +173,10 @@ int vfio_epoll_wait(int event_fd, int epoll_fd, int maxevents, int timeout)
         rc = check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
         if (rc > 0) {
             /* epoll_wait has at least one fd ready to read */
-            info("New Interrupt! %d", rc);
-			uint64_t val;
-			check_err(read(event_fd, &val, sizeof(val)), "to read event");
+            for (int i = 0; i < rc; i++) {
+                uint64_t val;
+                check_err(read(events[i].data.fd, &val, sizeof(val)), "to read event");
+            }
             break;
         } else {
             /* rc == 0, epoll_wait timed out */
