@@ -16,7 +16,7 @@ DEST_PORT=5
 START_RATE=1
 STEP_SIZE_RATE=1
 MAX_RATE=10
-TIME_LIMIT=10
+TIME_LIMIT=30
 
 ###
 ### Global Variables
@@ -119,16 +119,17 @@ function parse_interrupts {
 # @return: The number of received and transmitted packets
 function run_moongen {
     cd /root/MoonGen;
-    output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
+    # output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
+    output=$(./build/MoonGen l2-load-latency.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
     output=$(echo "${output}" | tail -n 4)
     rx=0;
     tx=0;
     while IFS= read -r line
     do
-        if [[ ${line} == *"id=${1}"* ]]; then
+        if [[ ${line} == *"id=${1}] TX"* ]]; then
             tx=$(echo "${line}" | grep -P '\d+ (?=packets)' -o)
         fi
-        if [[ ${line} == *"id=${2}]"* ]]; then
+        if [[ ${line} == *"id=${2}] RX"* ]]; then
             rx=$(echo "${line}" | grep -P '\d+ (?=packets)' -o)
         fi
     done <<< ${output}
@@ -142,7 +143,7 @@ function run_moongen {
 # @return: The PID of perf
 function run_perf {
     cd ${1};
-    nohup sh -c "sleep 10 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles -- sleep ${3}" > /dev/null &
+    nohup sh -c "sleep 1 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles -- sleep ${3}" > /dev/null &
     echo $!
 }
 
@@ -182,7 +183,7 @@ function run_experiment {
     for rate in `seq ${1} ${2} ${3}`;
     do
         PERF_PID=$(ssh omanyte "$(typeset -f); run_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$TIME_LIMIT\" \"$CPUS\"")
-        packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\"mp/s \"$4\"")
+        packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\"")
         cpuCycles=$(ssh omanyte "$(typeset -f); parse_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$CPUS\"")
         counter=$(ssh omanyte "$(typeset -f); parse_interrupts \"$DEVICE1_ID\"")
         interrupts="$(($counter-$oldCounter))"
@@ -201,7 +202,7 @@ function experiment1_1 {
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}s
+    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
 }
 
 # Number of interrupts on different core
@@ -211,7 +212,7 @@ function experiment1_2 {
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}s
+    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
 }
 
 # Number of interrupts on hyperthreading pair
@@ -221,7 +222,7 @@ function experiment1_3 {
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}s
+    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
 }
 
 function usage {
