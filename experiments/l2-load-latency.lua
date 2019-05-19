@@ -47,8 +47,14 @@ function loadSlave(queue, timeLimit)
     end)
     local bufs = mem:bufArray()
     local timeLimit = timer:new(timeLimit)
+    local seq = 1
     while mg.running() and not timeLimit:expired() do
         bufs:alloc(PKT_SIZE)
+        for i, buf in ipairs(bufs) do
+            local pkt = buf:getUdpPacket()
+            pkt.payload.uint64[1] = seq
+            seq = seq + 1
+        end
         queue:send(bufs)
     end
     queue:stop()

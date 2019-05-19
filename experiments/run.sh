@@ -13,16 +13,18 @@ PERF_FILE=perf.stat
 
 SOURCE_PORT=4
 DEST_PORT=5
+
 START_RATE=1
-STEP_SIZE_RATE=1
-MAX_RATE=10
-TIME_LIMIT=30
+STEP_RATE=0.1
+MAX_RATE=1
+TIME_LIMIT=10
 
 ###
 ### Global Variables
 
 IXY_PID=0
 PERF_PID=0
+MOONSNIFF_PID=0
 CPUS="0,1"
 
 ###
@@ -44,7 +46,7 @@ function build_ixy {
 # @return: The PID of the ixy forwarder
 function start_ixy_forwarder {
     cd ${1};
-    nohup ./ixy-fwd ${2} ${3} > /dev/null 2>&1&
+    nohup ./ixy-fwd ${2} ${3} > ixy.log 2>&1&
     echo $!
 }
 
@@ -112,6 +114,32 @@ function parse_interrupts {
     done < "/proc/interrupts"
 }
 
+# Start the MoonSniff process
+function start_moonsniff {
+    cd /root/MoonGen;
+    ./setup-hugetlbfs.sh > /dev/null 2>&1&
+    rm *.mscap;
+    rm *.csv;
+    nohup sh -c "./build/MoonGen examples/moonsniff/sniffer.lua --seq-offset 50 1 0 2> /dev/null | tee moonsniff.log" > /dev/null &
+    echo $!
+}
+
+# Stop the MoonSniff Process
+# @param 1: The PID of the MoonSniff process
+function stop_moonsniff {
+    kill $(ps -o pid= --ppid $1)
+}
+
+# Generate the MoonSniff histogram
+function gen_histogram {
+    cd /root/MoonGen;
+    ./build/MoonGen examples/moonsniff/post-processing.lua -i latencies-pre.mscap -s latencies-post.mscap
+}
+
+# Download the generated histogram
+function download_histogram {
+    scp tilga:/root/MoonGen/hist.csv ./hist.csv
+}
 # @param 1: source port
 # @param 2: dest port
 # @param 3: packet rate
@@ -119,6 +147,7 @@ function parse_interrupts {
 # @return: The number of received and transmitted packets
 function run_moongen {
     cd /root/MoonGen;
+    ./setup-hugetlbfs.sh > /dev/null 2>&1&
     # output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
     output=$(./build/MoonGen l2-load-latency.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
     output=$(echo "${output}" | tail -n 4)
@@ -141,7 +170,7 @@ function run_moongen {
 # @param 3: Sleep time
 # @param 4: List of CPUs to monitor
 # @return: The PID of perf
-function run_perf {
+function start_perf {
     cd ${1};
     nohup sh -c "sleep 1 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles -- sleep ${3}" > /dev/null &
     echo $!
@@ -182,7 +211,7 @@ function run_experiment {
     oldCounter=0;
     for rate in `seq ${1} ${2} ${3}`;
     do
-        PERF_PID=$(ssh omanyte "$(typeset -f); run_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$TIME_LIMIT\" \"$CPUS\"")
+        PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$TIME_LIMIT\" \"$CPUS\"")
         packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\"")
         cpuCycles=$(ssh omanyte "$(typeset -f); parse_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$CPUS\"")
         counter=$(ssh omanyte "$(typeset -f); parse_interrupts \"$DEVICE1_ID\"")
@@ -195,34 +224,80 @@ function run_experiment {
     done
 }
 
-# Number of interrupts on same core
-function experiment1_1 {
-    CPUS="1";
+# Number of interrupts on same core with sniffing
+function experiment1_1_sniff {
+    CPUS="0";
     ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
+    MOONSNIFF_PID=NULL
+    ssh tilga "$(typeset -f); gen_histogram"
+    download_histogram
 }
 
-# Number of interrupts on different core
-function experiment1_2 {
-    CPUS="1,2";
+# Number of interrupts on same core
+function experiment1_1 {
+    CPUS="0";
+    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
+    sleep 2
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+}
+
+
+# Number of interrupts on different core with sniff
+function experiment1_2_sniff {
+    CPUS="0,1";
     ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
+    MOONSNIFF_PID=NULL
+    ssh tilga "$(typeset -f); gen_histogram"
+    download_histogram
 }
 
-# Number of interrupts on hyperthreading pair
-function experiment1_3 {
-    CPUS="1,8";
+# Number of interrupts on different core
+function experiment1_2 {
+    CPUS="0,1";
+    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE2_ID\""
+    sleep 2
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+}
+
+# Number of interrupts on hyperthreading pair with sniff
+function experiment1_3_sniff {
+    CPUS="0";
     ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_SIZE_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
+    MOONSNIFF_PID=NULL
+    ssh tilga "$(typeset -f); gen_histogram"
+    download_histogram
+}
+
+# Number of interrupts on hyperthreading pair
+function experiment1_3 {
+    CPUS="0";
+    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE2_ID\""
+    sleep 2
+    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
 }
 
 function usage {
@@ -237,6 +312,9 @@ function cleanup {
   fi
   if [[ -n "$PERF_PID" ]]; then
     ssh omanyte "$(typeset -f); stop_perf \"$PERF_PID\""
+  fi
+    if [[ -n "$MOONSNIFF_PID" ]]; then
+    ssh tilga "$(typeset -f); stop_moonsniff \"$MOONSNIFF_PID\""
   fi
 }
 
