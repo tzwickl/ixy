@@ -14,10 +14,10 @@ PERF_FILE=perf.stat
 SOURCE_PORT=4
 DEST_PORT=5
 
-START_RATE=1
+START_RATE=0.1
 STEP_RATE=0.1
-MAX_RATE=1
-TIME_LIMIT=10
+MAX_RATE=1.2
+TIME_LIMIT=30
 
 ###
 ### Global Variables
@@ -59,7 +59,10 @@ function stop_ixy {
 # Stop the MoonGen Process
 function stop_moon_gen {
     pid=$(ps aux | grep ./build/MoonGen | grep -v grep | awk '{print $2}')
-    kill -9 ${pid}
+    if [[ -n "$pid" ]]; then
+     echo "Killing Moongen ${pid}"
+     kill -9 ${pid}
+    fi
 }
 
 # Set the CPU affinity of the Ixy process
@@ -150,6 +153,7 @@ function run_moongen {
     ./setup-hugetlbfs.sh > /dev/null 2>&1&
     # output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
     output=$(./build/MoonGen l2-load-latency.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
+    # output=$(./build/MoonGen l2-load-latency-poisson.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
     output=$(echo "${output}" | tail -n 4)
     rx=0;
     tx=0;
@@ -172,7 +176,7 @@ function run_moongen {
 # @return: The PID of perf
 function start_perf {
     cd ${1};
-    nohup sh -c "sleep 1 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles -- sleep ${3}" > /dev/null &
+    nohup sh -c "sleep 1 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles,irq:irq_handler_entry -- sleep ${3}" > /dev/null &
     echo $!
 }
 
@@ -184,17 +188,25 @@ function parse_perf {
     cd ${1};
     perf=$(cat "${2}")
     cpu0=0;
+    irq0=0;
     cpu1=0;
+    irq1=0;
     while IFS= read -r line
     do
-        if [[ ${line} == "S0-C${3:0:1}"* ]]; then
+        if [[ ${line} == "S0-C${3:0:1}"*"cycles"* ]]; then
             cpu0=$(echo "${line}" | sed 's/\,//g' | grep -P '\d+ (?=\ *cycles)' -o)
         fi
-        if [[ ${line} == "S0-C${3:2:1}"* ]]; then
+        if [[ ${line} == "S0-C${3:0:1}"*"irq"* ]]; then
+            irq0=$(echo "${line}" | sed 's/\,//g' | grep -P '\d+ (?=\ *irq:irq_handler_entry)' -o)
+        fi
+        if [[ ${line} == "S0-C${3:2:1}"*"cycles"* ]]; then
             cpu1=$(echo "${line}" | sed 's/\,//g' | grep -P '\d+ (?=\ *cycles)' -o)
         fi
+        if [[ ${line} == "S0-C${3:2:1}"*"irq"* ]]; then
+            irq1=$(echo "${line}" | sed 's/\,//g' | grep -P '\d+ (?=\ *irq:irq_handler_entry)' -o)
+        fi
     done <<< ${perf}
-    echo "cpu0=\"${cpu0}\";cpu1=\"${cpu1}\""
+    echo "cpu0=\"${cpu0}\";irq0=\"${irq0}\";cpu1=\"${cpu1}\";irq1=\"${irq1}\""
 }
 
 # Stop the perf Process
@@ -219,8 +231,8 @@ function run_experiment {
         oldCounter=${counter};
         eval ${packets}
         eval ${cpuCycles}
-        echo "${rate}; ${interrupts}; ${tx}; ${rx}; ${cpu0}; ${cpu1}" | sed 's/ //g' | tee -a ${RESULT_FILE}
-        PERF_PID=NULL
+        echo "${rate}; ${interrupts}; ${tx}; ${rx}; ${cpu0}; ${irq0}; ${cpu1}; ${irq1}" | sed 's/ //g' | tee -a ${RESULT_FILE}
+        PERF_PID=0
     done
 }
 
@@ -234,7 +246,7 @@ function experiment1_1_sniff {
     MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
     run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
     ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
-    MOONSNIFF_PID=NULL
+    MOONSNIFF_PID=0
     ssh tilga "$(typeset -f); gen_histogram"
     download_histogram
 }
@@ -260,7 +272,7 @@ function experiment1_2_sniff {
     MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
     run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
     ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
-    MOONSNIFF_PID=NULL
+    MOONSNIFF_PID=0
     ssh tilga "$(typeset -f); gen_histogram"
     download_histogram
 }
@@ -285,7 +297,7 @@ function experiment1_3_sniff {
     MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
     run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
     ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
-    MOONSNIFF_PID=NULL
+    MOONSNIFF_PID=0
     ssh tilga "$(typeset -f); gen_histogram"
     download_histogram
 }
@@ -306,14 +318,17 @@ function usage {
 
 function cleanup {
   echo "Cleanup"
-    ssh omastar "$(typeset -f); stop_moon_gen"
-  if [[ -n "$IXY_PID" ]]; then
+  ssh omastar "$(typeset -f); stop_moon_gen"
+  if [[ "$IXY_PID" -ne 0 ]]; then
+    echo "Killing Ixy ${IXY_PID}"
     ssh omanyte "$(typeset -f); stop_ixy \"$IXY_PID\""
   fi
-  if [[ -n "$PERF_PID" ]]; then
+  if [[ "$PERF_PID" -ne 0  ]]; then
+    echo "Killing Perf ${PERF_PID}"
     ssh omanyte "$(typeset -f); stop_perf \"$PERF_PID\""
   fi
-    if [[ -n "$MOONSNIFF_PID" ]]; then
+  if [[ "$MOONSNIFF_PID" -ne 0  ]]; then
+    echo "Killing Moonsniff ${MOONSNIFF_PID}"
     ssh tilga "$(typeset -f); stop_moonsniff \"$MOONSNIFF_PID\""
   fi
 }
