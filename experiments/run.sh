@@ -150,13 +150,26 @@ function download_histogram {
 # @param 2: dest port
 # @param 3: packet rate
 # @param 4: time limit
+# @param 5: Poisson or Uniform distribution of packets
 # @return: The number of received and transmitted packets
 function run_moongen {
     cd /root/MoonGen;
     ./setup-hugetlbfs.sh > /dev/null 2>&1&
-    # output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
-    # output=$(./build/MoonGen l2-load-latency.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
-    output=$(./build/MoonGen l2-load-latency-poisson.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
+    case ${5} in
+    "Poisson")
+        output=$(./build/MoonGen l2-load-latency-poisson.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
+        ;;
+     "Uniform")
+        output=$(./build/MoonGen l2-load-latency.lua -r ${3} -t ${4} ${1} ${2} 2> /dev/null | tee moongen.log)
+        ;;
+     "Ping")
+        output=$(./build/MoonGen l2-ping.lua ${1} ${2} 2> /dev/null | tee moongen.log)
+        ;;
+     *)
+        echo "Distribution function unknown:" ${5}
+        # output=$(./moongen-simple start load-latency:${1}:${2}:rate=${3},timeLimit=${4} 2> /dev/null | tee moongen.log)
+        ;;
+    esac
     output=$(echo "${output}" | tail -n 4)
     rx=0;
     tx=0;
@@ -174,7 +187,30 @@ function run_moongen {
 
 # @param 1: Path to Ixy
 # @param 2: Output file
-# @param 3: Sleep time
+# @param 3: Time Limit
+function start_powertop {
+    cd ${1};
+    nohup sh -c "sleep 1 && powertop --csv=${2} --time=1 --iteration=${3}" > /dev/null &
+    echo $!
+}
+
+# @param 1: Path to Ixy
+# @param 2: Powertop CSV file
+# @param 3: List of CPUs
+# @return: The CPU cycles
+function parse_powertop {
+    cd ${1};
+}
+
+# Stop the perf Process
+# @param 1: The PID of the powertop process
+function stop_powertop {
+    kill $(ps -o pid= --ppid $1)
+}
+
+# @param 1: Path to Ixy
+# @param 2: Output file
+# @param 3: Time Limit
 # @param 4: List of CPUs to monitor
 # @return: The PID of perf
 function start_perf {
@@ -223,13 +259,45 @@ function stop_perf {
 # @param 2: Step Size
 # @param 3: Max Rate
 # @param 4: Time Limit
-function run_experiment {
+# @param 5: Poisson or Uniform distribution of packets
+function run_experiment1 {
     oldCounter=0;
     for rate in `seq ${1} ${2} ${3}`;
     do
-        PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$TIME_LIMIT\" \"$CPUS\"")
+        PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$4\" \"$CPUS\"")
         MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
-        packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\"")
+        packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\" \"$5\"")
+        ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
+        MOONSNIFF_PID=0
+        histo=$(ssh tilga "$(typeset -f); gen_histogram")
+        download_histogram histo-${rate}.csv
+        cpuCycles=$(ssh omanyte "$(typeset -f); parse_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$CPUS\"")
+        counter=$(ssh omanyte "$(typeset -f); parse_interrupts \"$DEVICE1_ID\"")
+        interrupts="$(($counter-$oldCounter))"
+        oldCounter=${counter};
+        eval ${packets}
+        eval ${cpuCycles}
+        if [[ ${#CPUS} -eq 1 ]]; then
+            echo "${rate}; ${interrupts}; ${tx}; ${rx}; ${cpu0}; ${irq0}" | sed 's/ //g' | tee -a ${RESULT_FILE}
+        else
+            echo "${rate}; ${interrupts}; ${tx}; ${rx}; ${cpu0}; ${irq0}; ${cpu1}; ${irq1}" | sed 's/ //g' | tee -a ${RESULT_FILE}
+        fi
+        PERF_PID=0
+    done
+}
+
+# @param 1: Start Rate
+# @param 2: Step Size
+# @param 3: Max Rate
+# @param 4: Time Limit
+# @param 5: Poisson or Uniform distribution of packets
+function run_experiment2 {
+    oldCounter=0;
+    for rate in `seq ${1} ${2} ${3}`;
+    do
+        PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$4\" \"$CPUS\"")
+        MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
+        packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\" \"$5\"")
         ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
         MOONSNIFF_PID=0
         histo=$(ssh tilga "$(typeset -f); gen_histogram")
@@ -255,6 +323,7 @@ function run_experiment {
 # @param 3: Max rate
 # @param 4: Time limit
 # @param 5: ITR
+# @param 6: Poisson or Uniform distribution of packets. Default Uniform
 function experiment1_1 {
     CPUS="0";
     START_RATE=${1:-$START_RATE}
@@ -262,14 +331,15 @@ function experiment1_1 {
     MAX_RATE=${3:-$MAX_RATE}
     TIME_LIMIT=${4:-$TIME_LIMIT}
     ITR=${5:-$ITR}
-    printf "Running experiment 1 with start rate %f, step rate %f, max rate %f, time limit %u and ITR %s\n" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
+    DIST=${6:-"Uniform"} # Uniform or Poisson distribution of packets
+    printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
     ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    run_experiment1 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT} ${DIST}
 }
 
 # Number of interrupts on different core
@@ -279,7 +349,7 @@ function experiment1_2 {
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    run_experiment1 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
 }
 
 # Number of interrupts on hyperthreading pair
@@ -289,7 +359,32 @@ function experiment1_3 {
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE2_ID\""
     sleep 2
-    run_experiment ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+    run_experiment1 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT}
+}
+
+# Number of interrupts on same core
+# @param 1: Start rate
+# @param 2: Step size
+# @param 3: Max rate
+# @param 4: Time limit
+# @param 5: ITR
+# @param 6: Poisson or Uniform distribution of packets. Default Uniform
+function experiment2 {
+    CPUS="0";
+    START_RATE=${1:-$START_RATE}
+    STEP_RATE=${2:-$STEP_RATE}
+    MAX_RATE=${3:-$MAX_RATE}
+    TIME_LIMIT=${4:-$TIME_LIMIT}
+    ITR=${5:-$ITR}
+    DIST=${6:-"Uniform"} # Uniform or Poisson distribution of packets
+    printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
+    IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
+    sleep 2
+    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
+    sleep 2
+    run_experiment2 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT} ${DIST}
 }
 
 function usage {
