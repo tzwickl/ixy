@@ -7,6 +7,8 @@ DEVICE2_ID="0000:03:00.1"
 IXY_PATH="/tmp/ixy"
 RESULT_FILE=result.csv
 PERF_FILE=perf.stat
+POWERTOP_FILE=powertop.csv
+POWERTOP_RESULT_FILE=powertop-result.csv
 
 ###
 ### Omastar Configuration
@@ -17,13 +19,14 @@ DEST_PORT=5
 START_RATE=0.1
 STEP_RATE=0.1
 MAX_RATE=1.4
-TIME_LIMIT=30
+TIME_LIMIT=10
 
 ###
 ### Global Variables
 
 IXY_PID=0
 PERF_PID=0
+POWERTOP_PID=0
 MOONSNIFF_PID=0
 CPUS="0,1"
 ITR=0xFA7
@@ -67,10 +70,10 @@ function stop_moon_gen {
     fi
 }
 
-# Set the CPU affinity of the Ixy process
+# Set the CPU affinity of the given process
 # @param 1: CPU mask expressed as a decimal or hexadecimal number
-# @param 2: The PID of the ixy process
-function set_ixy_cpu_affinity {
+# @param 2: The PID of the process
+function set_cpu_affinity {
     taskset -p ${1} ${2}
 }
 
@@ -146,6 +149,7 @@ function gen_histogram {
 function download_histogram {
     scp tilga:/root/MoonGen/hist.csv ./$1 > /dev/null
 }
+
 # @param 1: source port
 # @param 2: dest port
 # @param 3: packet rate
@@ -190,22 +194,79 @@ function run_moongen {
 # @param 3: Time Limit
 function start_powertop {
     cd ${1};
-    nohup sh -c "sleep 1 && powertop --csv=${2} --time=1 --iteration=${3}" > /dev/null &
+    sleep=$(($3 + 1))
+    nohup bash -c "sleep 1 && powertop --csv=${2} --time=1 --iteration=${sleep} 2>&1" > /dev/null &
     echo $!
 }
 
 # @param 1: Path to Ixy
-# @param 2: Powertop CSV file
-# @param 3: List of CPUs
-# @return: The CPU cycles
+# @param 2: Input files
+# @param 3: Output file
+# @return: The CPU C stages
 function parse_powertop {
     cd ${1};
+    rm ${3}; > /dev/null
+    IFS='.' read -a arr <<< ${2}
+    for filename in ${arr[0]}*.${arr[1]}; do
+        powertop=$(cat "${filename}")
+        line_found=0;
+        c0=0
+        c1=0
+        c3=0
+        c6=0
+        while IFS= read -r line
+        do
+            IFS=';' read -a c_states <<< ${line};
+            if [[ "$line_found" -ne 0 ]]; then
+                if [[ ${line} == "C0"* ]]; then
+                    c0=${c_states[1]};
+                    continue;
+                fi
+                if [[ ${line} == "C1"* ]]; then
+                    c1=${c_states[1]};
+                    continue;
+                fi
+                if [[ ${line} == "C3"* ]]; then
+                    c3=${c_states[1]};
+                    continue;
+                fi
+                if [[ ${line} == "C6"* ]]; then
+                    c6=${c_states[1]};
+                    continue;
+                fi
+                if [[ ${line} == "POLL"* ]]; then
+                    continue;
+                fi
+                echo "${c0};${c1};${c3};${c6}" | sed 's/ //g' >> ${3}
+                break;
+            fi
+            if [[ ${line} == "CPU;0;CPU;6" ]]; then
+                line_found=1;
+            fi
+        done <<< ${powertop}
+        rm $filename
+    done
 }
 
-# Stop the perf Process
-# @param 1: The PID of the powertop process
+# Download the generated powertop result file
+# @param 1: Path to Ixy
+# @param 2: The name of the powertop result file
+# @param 3: The name of the downloaded file
+function download_powertop {
+    scp omanyte:${1}/${2} ${3}  > /dev/null
+}
+
+# Stop the powertop Process
+# @param 1: Path to Ixy
+# @param 2: Input files
+# @param 3: The PID of the powertop process
 function stop_powertop {
-    kill $(ps -o pid= --ppid $1)
+    cd ${1}
+    IFS='.' read -a arr <<< ${2}
+    for filename in ${arr[0]}*.${arr[1]}; do
+        rm ${filename}
+    done
+    kill $(ps -o pid= --ppid $3)
 }
 
 # @param 1: Path to Ixy
@@ -246,6 +307,7 @@ function parse_perf {
             irq1=$(echo "${line}" | sed 's/\,//g' | grep -P '\d+ (?=\ *irq:irq_handler_entry)' -o)
         fi
     done <<< ${perf}
+    rm ${2}
     echo "cpu0=\"${cpu0}\";irq0=\"${irq0}\";cpu1=\"${cpu1}\";irq1=\"${irq1}\""
 }
 
@@ -296,6 +358,9 @@ function run_experiment2 {
     for rate in `seq ${1} ${2} ${3}`;
     do
         PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$4\" \"$CPUS\"")
+        POWERTOP_PID=$(ssh omanyte "$(typeset -f); start_powertop \"$IXY_PATH\" \"$POWERTOP_FILE\" \"$4\"")
+        ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$PERF_PID\""
+        ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$POWERTOP_PID\""
         MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
         packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\" \"$5\"")
         ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
@@ -303,6 +368,8 @@ function run_experiment2 {
         histo=$(ssh tilga "$(typeset -f); gen_histogram")
         download_histogram histo-${rate}.csv
         cpuCycles=$(ssh omanyte "$(typeset -f); parse_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$CPUS\"")
+        ssh omanyte "$(typeset -f); parse_powertop \"$IXY_PATH\" \"$POWERTOP_FILE\" \"$POWERTOP_RESULT_FILE\""
+        download_powertop ${IXY_PATH} ${POWERTOP_RESULT_FILE} powertop-${rate}.csv
         counter=$(ssh omanyte "$(typeset -f); parse_interrupts \"$DEVICE1_ID\"")
         interrupts="$(($counter-$oldCounter))"
         oldCounter=${counter};
@@ -314,6 +381,7 @@ function run_experiment2 {
             echo "${rate}; ${interrupts}; ${tx}; ${rx}; ${cpu0}; ${irq0}; ${cpu1}; ${irq1}" | sed 's/ //g' | tee -a ${RESULT_FILE}
         fi
         PERF_PID=0
+        POWERTOP_PID=0
     done
 }
 
@@ -335,7 +403,7 @@ function experiment1_1 {
     printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
-    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
     sleep 2
@@ -345,7 +413,7 @@ function experiment1_1 {
 # Number of interrupts on different core
 function experiment1_2 {
     CPUS="0,1";
-    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 2 \"$DEVICE2_ID\""
     sleep 2
@@ -355,7 +423,7 @@ function experiment1_2 {
 # Number of interrupts on hyperthreading pair
 function experiment1_3 {
     CPUS="0";
-    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 40 \"$DEVICE2_ID\""
     sleep 2
@@ -380,11 +448,15 @@ function experiment2 {
     printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
-    ssh omanyte "$(typeset -f); set_ixy_cpu_affinity 1 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
     sleep 2
     run_experiment2 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT} ${DIST}
+}
+
+function delete_all_reports {
+   rm *.csv
 }
 
 function usage {
@@ -401,6 +473,10 @@ function cleanup {
   if [[ "$PERF_PID" -ne 0  ]]; then
     echo "Killing Perf ${PERF_PID}"
     ssh omanyte "$(typeset -f); stop_perf \"$PERF_PID\""
+  fi
+  if [[ "$POWERTOP_PID" -ne 0  ]]; then
+    echo "Killing Powertop ${POWERTOP_PID}"
+    ssh omanyte "$(typeset -f); stop_powertop \"$IXY_PATH\" \"$POWERTOP_FILE\" \"$POWERTOP_PID\""
   fi
   if [[ "$MOONSNIFF_PID" -ne 0  ]]; then
     echo "Killing Moonsniff ${MOONSNIFF_PID}"
