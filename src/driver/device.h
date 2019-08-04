@@ -52,7 +52,7 @@ struct ixy_device {
 	struct ixy_interrupt* interrupts;
 };
 
-struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues);
+struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr);
 
 // Public stubs that forward the calls to the driver-specific implementations
 static inline uint32_t ixy_rx_batch(struct ixy_device* dev, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {

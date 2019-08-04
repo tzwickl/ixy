@@ -210,37 +210,45 @@ function parse_powertop {
     for filename in ${arr[0]}*.${arr[1]}; do
         powertop=$(cat "${filename}")
         line_found=0;
-        c0=0
-        c1=0
-        c3=0
-        c6=0
+        cpu1_c0=0
+        cpu2_c0=0
+        cpu1_c1=0
+        cpu2_c1=0
+        cpu1_c3=0
+        cpu2_c3=0
+        cpu1_c6=0
+        cpu2_c6=0
         while IFS= read -r line
         do
             IFS=';' read -a c_states <<< ${line};
             if [[ "$line_found" -ne 0 ]]; then
                 if [[ ${line} == "C0"* ]]; then
-                    c0=${c_states[1]};
+                    cpu1_c0=${c_states[1]};
+                    cpu2_c0=${c_states[2]};
                     continue;
                 fi
                 if [[ ${line} == "C1"* ]]; then
-                    c1=${c_states[1]};
+                    cpu1_c1=${c_states[1]};
+                    cpu2_c1=${c_states[3]};
                     continue;
                 fi
                 if [[ ${line} == "C3"* ]]; then
-                    c3=${c_states[1]};
+                    cpu1_c3=${c_states[1]};
+                    cpu2_c3=${c_states[3]};
                     continue;
                 fi
                 if [[ ${line} == "C6"* ]]; then
-                    c6=${c_states[1]};
+                    cpu1_c6=${c_states[1]};
+                    cpu2_c6=${c_states[3]};
                     continue;
                 fi
                 if [[ ${line} == "POLL"* ]]; then
                     continue;
                 fi
-                echo "${c0};${c1};${c3};${c6}" | sed 's/ //g' >> ${3}
+                echo "${cpu1_c0};${cpu1_c1};${cpu1_c3};${cpu1_c6};${cpu2_c0};${cpu2_c1};${cpu2_c3};${cpu2_c6}" | sed 's/ //g' >> ${3}
                 break;
             fi
-            if [[ ${line} == "CPU;0;CPU;6" ]]; then
+            if [[ ${line} == "CPU;1;CPU;7" ]]; then
                 line_found=1;
             fi
         done <<< ${powertop}
@@ -359,8 +367,8 @@ function run_experiment2 {
     do
         PERF_PID=$(ssh omanyte "$(typeset -f); start_perf \"$IXY_PATH\" \"$PERF_FILE\" \"$4\" \"$CPUS\"")
         POWERTOP_PID=$(ssh omanyte "$(typeset -f); start_powertop \"$IXY_PATH\" \"$POWERTOP_FILE\" \"$4\"")
-        ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$PERF_PID\""
-        ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$POWERTOP_PID\""
+        ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$PERF_PID\""
+        ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$POWERTOP_PID\""
         MOONSNIFF_PID=$(ssh tilga "$(typeset -f); start_moonsniff")
         packets=$(ssh omastar "$(typeset -f); run_moongen \"$SOURCE_PORT\" \"$DEST_PORT\" \"$rate\" \"$4\" \"$5\"")
         ssh tilga "$(typeset -f); stop_moonsniff $MOONSNIFF_PID"
@@ -438,7 +446,7 @@ function experiment1_3 {
 # @param 5: ITR
 # @param 6: Poisson or Uniform distribution of packets. Default Uniform
 function experiment2 {
-    CPUS="0";
+    CPUS="1";
     START_RATE=${1:-$START_RATE}
     STEP_RATE=${2:-$STEP_RATE}
     MAX_RATE=${3:-$MAX_RATE}
@@ -448,9 +456,9 @@ function experiment2 {
     printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
-    ssh omanyte "$(typeset -f); set_cpu_affinity 1 \"$IXY_PID\""
-    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE1_ID\""
-    ssh omanyte "$(typeset -f); set_interrupt_affinity 1 \"$DEVICE2_ID\""
+    ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE2_ID\""
     sleep 2
     run_experiment2 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT} ${DIST}
 }

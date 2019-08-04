@@ -30,7 +30,7 @@ const int MIN_MEMPOOL_ENTRIES = 4096;
 
 const int TX_CLEAN_BATCH = 32;
 
-static struct interrupts hybrid_interrupt = {0, 1000l * 1000l * 1000l, 0, 0};
+static struct interrupts hybrid_interrupt = {0, 30 * 1000l * 1000l * 1000l, 0, 0};
 
 // allocated for each rx queue, keeps state for the receive function
 struct ixgbe_rx_queue {
@@ -155,9 +155,12 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id, uint32_t itr) {
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
 	//throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
+    uint32_t gpie = get_reg32(dev->addr, IXGBE_GPIE);
+    gpie |= IXGBE_GPIE_MSIX_MODE | IXGBE_GPIE_PBA_SUPPORT | IXGBE_GPIE_EIAME;
+    set_reg32(dev->addr, IXGBE_GPIE, gpie);
 	set_ivar(dev, 0, queue_id, queue_id);
 
 	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
@@ -166,11 +169,32 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 3: The EIAC[n] registers should be set to auto clear for transmit and receive interrupt
 	// causes (for best performance). The EIAC bits that control the other and TCP timer
 	// interrupt causes should be set to 0b (no auto clear).
-	set_reg32(dev->addr, IXGBE_EIAC, IXGBE_EICR_RTX_QUEUE);
+	set_reg32(dev->addr, IXGBE_EIAC, IXGBE_EIMS_RTX_QUEUE);
 
 	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
+    //set_reg32(dev->addr, IXGBE_EIAM_EX(0), 0xFFFFFFFF);
+    //set_reg32(dev->addr, IXGBE_EIAM_EX(1), 0xFFFFFFFF);
 
 	// Step 5: Set the interrupt throttling in EITR[n] and GPIE according to the preferred mode of operation.
+	// 0x000 (0us) => ... INT/s
+	// 0x008 (2us) => 488200 INT/s
+	// 0x010 (4us) => 244000 INT/s
+	// 0x028 (10us) => 97600 INT/s
+	// 0x0C8 (50us) => 20000 INT/s
+	// 0x190 (100us) => 9766 INT/s
+	// 0x320 (200us) => 4880 INT/s
+	// 0x4B0 (300us) => 3255 INT/s
+	// 0x640 (400us) => 2441 INT/s
+	// 0x7D0 (500us) => 2000 INT/s
+	// 0x960 (600us) => 1630 INT/s
+	// 0xAF0 (700us) => 1400 INT/s
+	// 0xC80 (800us) => 1220 INT/s
+	// 0xE10 (900us) => 1080 INT/s
+	// 0xFA7 (1000us) => 980 INT/s
+	// 0xFFF (1024us) => 950 INT/s
+    set_reg32(dev->addr, IXGBE_EITR(queue_id), itr);
+    debug("ITR %0x", get_reg32(dev->addr, IXGBE_EITR(queue_id)));
+
 
 	// Step 6: Software enables the required interrupt causes by setting the EIMS register
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
@@ -185,10 +209,10 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id, uint32_t itr) {
 	switch (dev->ixy.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX:
-			enable_msix_interrupt(dev, queue_id);
+			enable_msix_interrupt(dev, queue_id, itr);
 			break;
 		case VFIO_PCI_MSI_IRQ_INDEX:
 			enable_msi_interrupt(dev, queue_id);
@@ -411,7 +435,7 @@ static void wait_for_link(const struct ixgbe_device* dev) {
 }
 
 // see section 4.6.3
-static void reset_and_init(struct ixgbe_device* dev) {
+static void reset_and_init(struct ixgbe_device* dev, uint32_t itr) {
 	info("Resetting device %s", dev->ixy.pci_addr);
 
 	// section 4.6.3.1 - disable all interrupts
@@ -455,7 +479,7 @@ static void reset_and_init(struct ixgbe_device* dev) {
 
 	// enable interrupts
 	for (uint16_t queue = 0; queue < dev->ixy.num_rx_queues; queue++) {
-		enable_interrupt(dev, queue);
+		enable_interrupt(dev, queue, itr);
 	}
 
 	// finally, enable promisc mode by default, it makes testing less annoying
@@ -465,7 +489,7 @@ static void reset_and_init(struct ixgbe_device* dev) {
 	wait_for_link(dev);
 }
 
-struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues) {
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr) {
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
 	}
@@ -514,7 +538,7 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	}
 	dev->rx_queues = calloc(rx_queues, sizeof(struct ixgbe_rx_queue) + sizeof(void*) * MAX_RX_QUEUE_ENTRIES);
 	dev->tx_queues = calloc(tx_queues, sizeof(struct ixgbe_tx_queue) + sizeof(void*) * MAX_TX_QUEUE_ENTRIES);
-	reset_and_init(dev);
+	reset_and_init(dev, itr);
 
 	return &dev->ixy;
 }
@@ -567,7 +591,6 @@ void ixgbe_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 // advance index with wrap-around, this line is the reason why we require a power of two for the queue size
 #define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
 
-
 // section 1.8.2 and 7.1
 // try to receive a single packet if one is available, non-blocking
 // see datasheet section 7.1.9 for an explanation of the rx ring structure
@@ -576,11 +599,12 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
 
 	if (hybrid_interrupt.interrupt_enabled) {
+	    //info("Interrupt");
 		vfio_epoll_wait(ixy->interrupts[queue_id].vfio_epoll_fd, 10, -1);
-		disable_interrupt(dev, queue_id);
-        hybrid_interrupt.last_time_checked = get_monotonic_time();
+        //disable_interrupt(dev, queue_id);
+        //hybrid_interrupt.last_time_checked = get_monotonic_time();
         hybrid_interrupt.interrupt_enabled = false;
-	}
+    }
 
 	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + queue_id;
 	uint16_t rx_index = queue->rx_index; // rx index we checked in the last run of this function
@@ -629,15 +653,16 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 
 	hybrid_interrupt.rx_pkts += buf_index;
 
-	uint64_t time = get_monotonic_time();
-	if (time - hybrid_interrupt.last_time_checked > hybrid_interrupt.interval) {
-		// every second
-		check_interrupt(&hybrid_interrupt, time);
-	}
-
-	if (hybrid_interrupt.interrupt_enabled) {
-		enable_interrupt(dev, queue_id);
-	}
+    if (strcmp("0000:03:00.1", ixy->pci_addr) && buf_index < num_bufs) {
+        //enable_interrupt(dev, queue_id);
+        //info("Enabling Interrupt: %d %d", buf_index, num_bufs);
+        hybrid_interrupt.interrupt_enabled = true;
+//		uint64_t time = get_monotonic_time();
+//		if (time - hybrid_interrupt.last_time_checked >  100l * 1000l * 1000l) {
+//			hybrid_interrupt.last_time_checked = time;
+//			info("Enabling Interrupt: %d %d", buf_index, num_bufs);
+//		}
+    }
 
 	return buf_index; // number of packets stored in bufs; buf_index points to the next index
 }

@@ -27,14 +27,14 @@ static void forward(struct ixy_device* rx_dev, uint16_t rx_queue, struct ixy_dev
 }
 
 int main(int argc, char* argv[]) {
-	if (argc != 3) {
+	if (argc != 4) {
 		printf("%s forwards packets between two ports.\n", argv[0]);
-		printf("Usage: %s <pci bus id2> <pci bus id1>\n", argv[0]);
+		printf("Usage: %s <itr> <pci bus id2> <pci bus id1>\n", argv[0]);
 		return 1;
 	}
 
-	struct ixy_device* dev1 = ixy_init(argv[1], 1, 1);
-	struct ixy_device* dev2 = ixy_init(argv[2], 1, 1);
+	struct ixy_device* dev1 = ixy_init(argv[2], 1, 1, strtoul(argv[1], NULL, 16));
+	struct ixy_device* dev2 = ixy_init(argv[3], 1, 1, strtoul(argv[1], NULL, 16));
 
 	uint64_t last_stats_printed = monotonic_time();
 	struct device_stats stats1, stats1_old;

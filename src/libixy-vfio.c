@@ -199,7 +199,7 @@ int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout)
     int rc;
 
     while (1) {
-    	info("Waiting for packets...");
+    	// info("Waiting for packets...");
         rc = (int) check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
         if (rc > 0) {
             /* epoll_wait has at least one fd ready to read */
