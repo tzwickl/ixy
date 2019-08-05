@@ -22,6 +22,7 @@ static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
  * @param diff The difference since the last call in nanoseconds.
  * @param buf_index The current buffer index
  * @param buf_size The maximum buffer size.
+ * @return Whether to disable NIC interrupts or not.
  */
 void check_interrupt(struct interrupt_queues* interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
 	struct interrupt_moving_avg* avg = &interrupt->moving_avg;
@@ -41,8 +42,8 @@ void check_interrupt(struct interrupt_queues* interrupt, uint64_t diff, uint32_t
 	double average = avg->sum / (avg->length - 1);
 	if (average > INTERRUPT_THRESHOLD) {
 		interrupt->interrupt_enabled = false;
-	} else if (buf_index < buf_size) {
-		interrupt->interrupt_enabled = true;
+	} else if (buf_index == buf_size) {
+		interrupt->interrupt_enabled = false;
 	} else {
 		interrupt->interrupt_enabled = true;
 	}

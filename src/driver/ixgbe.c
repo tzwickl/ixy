@@ -115,7 +115,6 @@ static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 	mask &= ~(1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
 	clear_interrupt(dev, queue_id);
-	dev->ixy.interrupts.queues[queue_id].interrupt_enabled = false;
 	info("Using polling:");
 }
 
@@ -148,7 +147,6 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
 	mask |= (1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
-	dev->ixy.interrupts.queues[queue_id].interrupt_enabled = true;
 	info("Using MSI interrupts");
 }
 
@@ -200,7 +198,6 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
 	mask |= (1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
-	dev->ixy.interrupts.queues[queue_id].interrupt_enabled = true;
 	info("Using MSIX interrupts");
 }
 
@@ -680,12 +677,21 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	}
 
 	if (interrupts_enabled) {
+		bool int_en = interrupt->interrupt_enabled;
 		interrupt->rx_pkts += buf_index;
 
 		uint64_t diff = monotonic_time() - interrupt->last_time_checked;
 		if (diff > interrupt->interval) {
 			// every second
 			check_interrupt(interrupt, diff, buf_index, num_bufs);
+		}
+
+		if (int_en != interrupt->interrupt_enabled) {
+			if (interrupt->interrupt_enabled) {
+				enable_interrupt(dev, queue_id);
+			} else {
+				disable_interrupt(dev, queue_id);
+			}
 		}
 	}
 
