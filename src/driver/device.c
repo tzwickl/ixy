@@ -5,7 +5,8 @@
 #include "driver/virtio.h"
 #include "pci.h"
 
-struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr) {
+struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr,
+		int interrupt_timeout, bool interrupts_enabled) {
 	// Read PCI configuration space
 	// For VFIO, we could access the config space another way
 	// (VFIO_PCI_CONFIG_REGION_INDEX). This is not needed, though, because
@@ -23,6 +24,6 @@ struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t t
 		return virtio_init(pci_addr, rx_queues, tx_queues);
 	} else {
 		// Our best guess is to try ixgbe
-		return ixgbe_init(pci_addr, rx_queues, tx_queues, itr);
+		return ixgbe_init(pci_addr, rx_queues, tx_queues, itr, interrupt_timeout, interrupts_enabled);
 	}
 }

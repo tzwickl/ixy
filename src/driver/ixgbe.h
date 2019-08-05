@@ -14,7 +14,8 @@ struct ixgbe_device {
 
 #define IXY_TO_IXGBE(ixy_device) container_of(ixy_device, struct ixgbe_device, ixy)
 
-struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr);
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr,
+		int interrupt_timeout, bool interrupts_enabled);
 uint32_t ixgbe_get_link_speed(const struct ixy_device* dev);
 void ixgbe_set_promisc(struct ixy_device* dev, bool enabled);
 void ixgbe_read_stats(struct ixy_device* dev, struct device_stats* stats);

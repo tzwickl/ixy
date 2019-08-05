@@ -1,5 +1,7 @@
 #include "interrupts.h"
 #include "libixy-vfio.h"
+#include "log.h"
+#include "stats.h"
 
 #include <stdio.h>
 
@@ -10,26 +12,39 @@
  * @param elapsed_time_nanos Time elapsed in nanoseconds since the last calculation.
  * @return Packets per second.
  */
-static double pps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
-	return (double) received_pkts / ((double) elapsed_time_nanos / 1000000000.0);
-}
-
-/**
- * Get current timestamp in nanoseconds based on rdtsc.
- */
-uint64_t get_monotonic_time() {
-	struct timespec timespec;
-	clock_gettime(CLOCK_MONOTONIC, &timespec);
-	return timespec.tv_sec * 1000 * 1000 * 1000 + timespec.tv_nsec;
+static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
+	return (double) received_pkts / 1000000.0 / ((double) elapsed_time_nanos / 1000000000.0);
 }
 
 /**
  * Check if interrupts or polling should be used based on the current number of received packets per seconds.
  * @param interrupts The interrupt handler.
- * @param time The current time in nanoseconds.
+ * @param diff The difference since the last call in nanoseconds.
+ * @param buf_index The current buffer index
+ * @param buf_size The maximum buffer size.
  */
-void check_interrupt(struct interrupts* interrupts, uint64_t time) {
-    interrupts->interrupt_enabled = pps(interrupts->rx_pkts, time - interrupts->last_time_checked) <= 10;
-	interrupts->rx_pkts = 0;
-	interrupts->last_time_checked = get_monotonic_time();
+void check_interrupt(struct interrupt_queues* interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
+	struct interrupt_moving_avg* avg = &interrupt->moving_avg;
+	avg->measured_rates[avg->index] = mpps(interrupt->rx_pkts, diff);
+	avg->sum += avg->measured_rates[avg->index];
+	if (avg->length == MOVING_AVERAGE_RANGE) {
+		if (avg->index == 0) {
+			avg->sum -= avg->measured_rates[MOVING_AVERAGE_RANGE - 1];
+		} else {
+			avg->sum -= avg->measured_rates[avg->index - 1];
+		}
+		avg->length--;
+	}
+	avg->index = (avg->index + 1) % MOVING_AVERAGE_RANGE;
+	avg->length += 1;
+	interrupt->rx_pkts = 0;
+	double average = avg->sum / (avg->length - 1);
+	if (average > INTERRUPT_THRESHOLD) {
+		interrupt->interrupt_enabled = false;
+	} else if (buf_index < buf_size) {
+		interrupt->interrupt_enabled = true;
+	} else {
+		interrupt->interrupt_enabled = true;
+	}
+	interrupt->last_time_checked = monotonic_time();
 }

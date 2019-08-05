@@ -6,6 +6,7 @@
 
 #include "log.h"
 #include "memory.h"
+#include "../interrupts.h"
 
 #define MAX_QUEUES 64
 
@@ -30,12 +31,6 @@ struct device_stats;
 	(type*)((char*)__mptr - offsetof(type, member));\
 })
 
-struct ixy_interrupt {
-    int vfio_event_fd; // event fd
-    int vfio_epoll_fd; // epoll fd
-    bool interrupt_enabled;
-};
-
 struct ixy_device {
 	const char* pci_addr;
 	const char* driver_name;
@@ -48,11 +43,11 @@ struct ixy_device {
 	uint32_t (*get_link_speed) (const struct ixy_device* dev);
 	bool vfio;
 	int vfio_fd; // device fd
-	int interrupt_type;
-	struct ixy_interrupt* interrupts;
+	struct interrupts interrupts;
 };
 
-struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr);
+struct ixy_device* ixy_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr,
+		int interrupt_timeout, bool interrupts_enabled);
 
 // Public stubs that forward the calls to the driver-specific implementations
 static inline uint32_t ixy_rx_batch(struct ixy_device* dev, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {
