@@ -20,7 +20,7 @@ static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
  * Check if interrupts or polling should be used based on the current number of received packets per seconds.
  * @param interrupts The interrupt handler.
  * @param diff The difference since the last call in nanoseconds.
- * @param buf_index The current buffer index
+ * @param buf_index The current buffer index.
  * @param buf_size The maximum buffer size.
  * @return Whether to disable NIC interrupts or not.
  */
