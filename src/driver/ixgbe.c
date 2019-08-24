@@ -63,7 +63,7 @@ struct ixgbe_tx_queue {
  * @param queue queue to map the corresponding interrupt to
  * @param msix_vector the vector to map to the corresponding queue
  */
-static void set_ivar(struct ixgbe_device* dev, s8 direction, u8 queue, u8 msix_vector) {
+static void set_ivar(struct ixgbe_device *dev, s8 direction, u8 queue, u8 msix_vector) {
 	u32 ivar, index;
 	msix_vector |= IXGBE_IVAR_ALLOC_VAL;
 	index = ((16 * (queue & 1)) + (8 * direction));
@@ -78,9 +78,9 @@ static void set_ivar(struct ixgbe_device* dev, s8 direction, u8 queue, u8 msix_v
  * @param dev The device.
  */
 static void clear_interrupts(struct ixgbe_device *dev) {
-    // Clear interrupt mask
-    set_reg32(dev->addr, IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
-    get_reg32(dev->addr, IXGBE_EICR);
+	// Clear interrupt mask
+	set_reg32(dev->addr, IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
+	get_reg32(dev->addr, IXGBE_EICR);
 }
 
 /**
@@ -89,9 +89,9 @@ static void clear_interrupts(struct ixgbe_device *dev) {
  * @param queue_id The ID of the queue to clear.
  */
 static void clear_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
-    // Clear interrupt mask
-    set_reg32(dev->addr, IXGBE_EIMC, 1 << queue_id);
-    get_reg32(dev->addr, IXGBE_EICR);
+	// Clear interrupt mask
+	set_reg32(dev->addr, IXGBE_EIMC, 1 << queue_id);
+	get_reg32(dev->addr, IXGBE_EICR);
 }
 
 /**
@@ -123,7 +123,7 @@ static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+static void enable_msi_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
 	// register by setting the IVAR[n] registers.
 	set_ivar(dev, 0, queue_id, 0);
@@ -155,12 +155,12 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+static void enable_msix_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
 	//throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
-    uint32_t gpie = get_reg32(dev->addr, IXGBE_GPIE);
-    gpie |= IXGBE_GPIE_MSIX_MODE | IXGBE_GPIE_PBA_SUPPORT | IXGBE_GPIE_EIAME;
-    set_reg32(dev->addr, IXGBE_GPIE, gpie);
+	uint32_t gpie = get_reg32(dev->addr, IXGBE_GPIE);
+	gpie |= IXGBE_GPIE_MSIX_MODE | IXGBE_GPIE_PBA_SUPPORT | IXGBE_GPIE_EIAME;
+	set_reg32(dev->addr, IXGBE_GPIE, gpie);
 	set_ivar(dev, 0, queue_id, queue_id);
 
 	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
@@ -172,8 +172,8 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	set_reg32(dev->addr, IXGBE_EIAC, IXGBE_EIMS_RTX_QUEUE);
 
 	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
-    //set_reg32(dev->addr, IXGBE_EIAM_EX(0), 0xFFFFFFFF);
-    //set_reg32(dev->addr, IXGBE_EIAM_EX(1), 0xFFFFFFFF);
+	//set_reg32(dev->addr, IXGBE_EIAM_EX(0), 0xFFFFFFFF);
+	//set_reg32(dev->addr, IXGBE_EIAM_EX(1), 0xFFFFFFFF);
 
 	// Step 5: Set the interrupt throttling in EITR[n] and GPIE according to the preferred mode of operation.
 	// 0x000 (0us) => ... INT/s
@@ -192,7 +192,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// 0xE10 (900us) => 1080 INT/s
 	// 0xFA7 (1000us) => 980 INT/s
 	// 0xFFF (1024us) => 950 INT/s
-    set_reg32(dev->addr, IXGBE_EITR(queue_id), dev->ixy.interrupts.itr_rate);
+	set_reg32(dev->addr, IXGBE_EITR(queue_id), dev->ixy.interrupts.itr_rate);
 
 	// Step 6: Software enables the required interrupt causes by setting the EIMS register
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
@@ -206,7 +206,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
+static void enable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
 	if (!dev->ixy.interrupts.interrupts_enabled) {
 		return;
 	}
@@ -231,7 +231,7 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 	if (!dev->ixy.interrupts.interrupts_enabled) {
 		return;
 	}
-	dev->ixy.interrupts.queues = (struct interrupt_queues*) malloc(dev->ixy.num_rx_queues * sizeof(struct interrupt_queues));
+	dev->ixy.interrupts.queues = (struct interrupt_queues *) malloc(dev->ixy.num_rx_queues * sizeof(struct interrupt_queues));
 	dev->ixy.interrupts.interrupt_type = vfio_setup_interrupt(dev->ixy.vfio_fd);
 	switch (dev->ixy.interrupts.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
@@ -240,9 +240,9 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 				int vfio_epoll_fd = vfio_epoll_ctl(vfio_event_fd);
 				dev->ixy.interrupts.queues[rx_queue].vfio_event_fd = vfio_event_fd;
 				dev->ixy.interrupts.queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
-                dev->ixy.interrupts.queues[rx_queue].moving_avg.length = 0;
-                dev->ixy.interrupts.queues[rx_queue].moving_avg.index = 0;
-                dev->ixy.interrupts.queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
+				dev->ixy.interrupts.queues[rx_queue].moving_avg.length = 0;
+				dev->ixy.interrupts.queues[rx_queue].moving_avg.index = 0;
+				dev->ixy.interrupts.queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
 			}
 			break;
 		}
@@ -252,8 +252,8 @@ static void setup_interrupts(struct ixgbe_device *dev) {
 			for (uint32_t rx_queue = 0; rx_queue < dev->ixy.num_rx_queues; rx_queue++) {
 				dev->ixy.interrupts.queues[rx_queue].vfio_event_fd = vfio_event_fd;
 				dev->ixy.interrupts.queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
-                dev->ixy.interrupts.queues[rx_queue].moving_avg.length = 0;
-                dev->ixy.interrupts.queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
+				dev->ixy.interrupts.queues[rx_queue].moving_avg.length = 0;
+				dev->ixy.interrupts.queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
 			}
 			break;
 		}
@@ -624,7 +624,7 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	bool interrupts_enabled = ixy->interrupts.interrupts_enabled;
 
 	if (interrupts_enabled) {
-	    interrupt = &ixy->interrupts.queues[queue_id];
+		interrupt = &ixy->interrupts.queues[queue_id];
 	}
 
 	if (interrupts_enabled && interrupt->interrupt_enabled) {
