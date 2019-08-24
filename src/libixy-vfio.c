@@ -52,7 +52,7 @@ int vfio_enable_msi(int device_fd) {
 	// setup event fd
 	int event_fd = eventfd(0, 0);
 
-    struct vfio_irq_set * irq_set = (struct vfio_irq_set *) irq_set_buf;
+	struct vfio_irq_set *irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);
 	irq_set->count = 1;
 	irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD | VFIO_IRQ_SET_ACTION_TRIGGER;
@@ -75,7 +75,7 @@ int vfio_disable_msi(int device_fd) {
 	info("Disable MSI Interrupts");
 	char irq_set_buf[IRQ_SET_BUF_LEN];
 
-	struct vfio_irq_set * irq_set = (struct vfio_irq_set *) irq_set_buf;
+	struct vfio_irq_set *irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);
 	irq_set->count = 0;
 	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
@@ -99,7 +99,7 @@ int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 	int *fd_ptr;
 
 	// setup event fd
-    int event_fd = eventfd(0, 0);
+	int event_fd = eventfd(0, 0);
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);;
@@ -163,15 +163,15 @@ int vfio_setup_interrupt(int device_fd) {
 
 
 	for (int i = VFIO_PCI_MSIX_IRQ_INDEX; i >= 0; i--) {
-		struct vfio_irq_info irq = { .argsz = sizeof(irq), .index = i };
+		struct vfio_irq_info irq = {.argsz = sizeof(irq), .index = i};
 
 		check_err(ioctl(device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq), "get IRQ Info");
 
-        /* if this vector cannot be used with eventfd continue with next*/
-        if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
-            error("IRQ doesn't support Event FD");
-            continue;
-        }
+		/* if this vector cannot be used with eventfd continue with next*/
+		if ((irq.flags & VFIO_IRQ_INFO_EVENTFD) == 0) {
+			error("IRQ doesn't support Event FD");
+			continue;
+		}
 
 		return i;
 	}
@@ -190,29 +190,28 @@ int vfio_setup_interrupt(int device_fd) {
  * while specifying a timeout equal to zero cause epoll_wait to return immediately, even if no events are available.
  * @return Number of ready file descriptors.
  */
-int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout)
-{
-    struct epoll_event events[maxevents];
-    int rc;
+int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout) {
+	struct epoll_event events[maxevents];
+	int rc;
 
-    while (1) {
-    	// info("Waiting for packets...");
-        rc = (int) check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
-        if (rc > 0) {
-            /* epoll_wait has at least one fd ready to read */
-            for (int i = 0; i < rc; i++) {
-                uint64_t val;
-                // read event file descriptor to clear interrupt.
-                check_err(read(events[i].data.fd, &val, sizeof(val)), "to read event");
-            }
-            break;
-        } else {
-            /* rc == 0, epoll_wait timed out */
-            break;
-        }
-    }
+	while (1) {
+		// info("Waiting for packets...");
+		rc = (int) check_err(epoll_wait(epoll_fd, events, maxevents, timeout), "to handle epoll wait");
+		if (rc > 0) {
+			/* epoll_wait has at least one fd ready to read */
+			for (int i = 0; i < rc; i++) {
+				uint64_t val;
+				// read event file descriptor to clear interrupt.
+				check_err(read(events[i].data.fd, &val, sizeof(val)), "to read event");
+			}
+			break;
+		} else {
+			/* rc == 0, epoll_wait timed out */
+			break;
+		}
+	}
 
-    return rc;
+	return rc;
 }
 
 /**
@@ -221,19 +220,19 @@ int vfio_epoll_wait(int epoll_fd, int maxevents, int timeout)
  * @return The epoll file descriptor.
  */
 int vfio_epoll_ctl(int event_fd) {
-    struct epoll_event event;
-    event.events = EPOLLIN;
-    event.data.fd = event_fd;
+	struct epoll_event event;
+	event.events = EPOLLIN;
+	event.data.fd = event_fd;
 
-    int epoll_fd = (int) check_err(epoll_create1(0), "to created epoll");
+	int epoll_fd = (int) check_err(epoll_create1(0), "to created epoll");
 
-    check_err(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &event), "to initialize epoll");
+	check_err(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &event), "to initialize epoll");
 
-    return epoll_fd;
+	return epoll_fd;
 }
 
 // returns the devices file descriptor or -1 on error
-int vfio_init(const char* pci_addr) {
+int vfio_init(const char *pci_addr) {
 	// find iommu group for the device
 	// `readlink /sys/bus/pci/device/<segn:busn:devn.funcn>/iommu_group`
 	char path[PATH_MAX], iommu_group_path[PATH_MAX];
@@ -246,10 +245,11 @@ int vfio_init(const char* pci_addr) {
 	}
 	strncat(path, "iommu_group", sizeof(path) - strlen(path) - 1);
 
-	int len = check_err(readlink(path, iommu_group_path, sizeof(iommu_group_path)), "find the iommu_group for the device");
+	int len = check_err(readlink(path, iommu_group_path, sizeof(iommu_group_path)),
+						"find the iommu_group for the device");
 
 	iommu_group_path[len] = '\0'; // append 0x00 to the string to end it
-	char* group_name = basename(iommu_group_path);
+	char *group_name = basename(iommu_group_path);
 	int groupid;
 	check_err(sscanf(group_name, "%d", &groupid), "convert group id to int");
 
@@ -262,10 +262,12 @@ int vfio_init(const char* pci_addr) {
 		set_vfio_container(cfd);
 
 		// check if the container's API version is the same as the VFIO API's
-		check_err((ioctl(cfd, VFIO_GET_API_VERSION) == VFIO_API_VERSION) - 1, "get a valid API version from the container");
+		check_err((ioctl(cfd, VFIO_GET_API_VERSION) == VFIO_API_VERSION) - 1,
+				  "get a valid API version from the container");
 
 		// check if type1 is supported
-		check_err((ioctl(cfd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU) == 1) - 1, "get Type1 IOMMU support from the IOMMU container");
+		check_err((ioctl(cfd, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU) == 1) - 1,
+				  "get Type1 IOMMU support from the IOMMU container");
 	}
 
 	// open VFIO group containing the device
