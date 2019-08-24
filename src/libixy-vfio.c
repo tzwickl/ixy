@@ -24,9 +24,6 @@
 
 ssize_t MIN_DMA_MEMORY = 4096; // we can not allocate less than page_size memory
 
-// One central Epoll File Descriptor for all VFIO devices so we wake up all devices if a new packet is received
-static int epoll_fd = 0;
-
 void vfio_enable_dma(int device_fd) {
 	// write to the command register (offset 4) in the PCIe config space
 	int command_register_offset = 4;
@@ -228,9 +225,7 @@ int vfio_epoll_ctl(int event_fd) {
     event.events = EPOLLIN;
     event.data.fd = event_fd;
 
-    if (epoll_fd == 0) {
-        epoll_fd = (int) check_err(epoll_create1(0), "to created epoll");
-    }
+    int epoll_fd = (int) check_err(epoll_create1(0), "to created epoll");
 
     check_err(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, event_fd, &event), "to initialize epoll");
 
