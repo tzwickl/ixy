@@ -149,14 +149,6 @@ int vfio_disable_msix(int device_fd) {
  */
 int vfio_setup_interrupt(int device_fd) {
 	info("Setup VFIO Interrupts");
-	struct vfio_device_info dev_info = {.argsz = sizeof(dev_info)};
-	check_err(ioctl(device_fd, VFIO_DEVICE_GET_INFO, &dev_info), "fetch VFIO Device Info");
-
-	// Get region info for config region
-	struct vfio_region_info conf_reg = {.argsz = sizeof(conf_reg)};
-	conf_reg.index = VFIO_PCI_CONFIG_REGION_INDEX;
-	check_err(ioctl(device_fd, VFIO_DEVICE_GET_REGION_INFO, &conf_reg), "get vfio config region info");
-
 
 	for (int i = VFIO_PCI_MSIX_IRQ_INDEX; i >= 0; i--) {
 		struct vfio_irq_info irq = {.argsz = sizeof(irq), .index = i};
