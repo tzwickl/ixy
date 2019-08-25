@@ -157,10 +157,6 @@ int vfio_setup_interrupt(int device_fd) {
 	conf_reg.index = VFIO_PCI_CONFIG_REGION_INDEX;
 	check_err(ioctl(device_fd, VFIO_DEVICE_GET_REGION_INFO, &conf_reg), "get vfio config region info");
 
-	// read config
-	__u8 config[256];
-	assert(pread(device_fd, config, sizeof(config), conf_reg.offset) == sizeof(config));
-
 
 	for (int i = VFIO_PCI_MSIX_IRQ_INDEX; i >= 0; i--) {
 		struct vfio_irq_info irq = {.argsz = sizeof(irq), .index = i};
