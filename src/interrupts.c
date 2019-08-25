@@ -26,20 +26,15 @@ static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
  */
 void check_interrupt(struct interrupt_queues *interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
 	struct interrupt_moving_avg *avg = &interrupt->moving_avg;
+	avg->sum -= avg->measured_rates[avg->index];
 	avg->measured_rates[avg->index] = mpps(interrupt->rx_pkts, diff);
 	avg->sum += avg->measured_rates[avg->index];
-	if (avg->length == MOVING_AVERAGE_RANGE) {
-		if (avg->index == 0) {
-			avg->sum -= avg->measured_rates[MOVING_AVERAGE_RANGE - 1];
-		} else {
-			avg->sum -= avg->measured_rates[avg->index - 1];
-		}
-		avg->length--;
+	if (avg->length < MOVING_AVERAGE_RANGE) {
+		avg->length++;
 	}
 	avg->index = (avg->index + 1) % MOVING_AVERAGE_RANGE;
-	avg->length += 1;
 	interrupt->rx_pkts = 0;
-	double average = avg->sum / (avg->length - 1);
+	double average = avg->sum / avg->length;
 	if (average > INTERRUPT_THRESHOLD) {
 		interrupt->interrupt_enabled = false;
 	} else if (buf_index == buf_size) {
