@@ -1,8 +1,6 @@
 #ifndef IXY_STATS_H
 #define IXY_STATS_H
 
-#define S_TO_NS(sec) (sec * 1000 * 1000 * 1000)
-
 #include <stdint.h>
 #include <stddef.h>
 #include <time.h>

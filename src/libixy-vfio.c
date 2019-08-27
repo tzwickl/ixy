@@ -103,8 +103,9 @@ int vfio_enable_msix(int device_fd, uint32_t interrupt_vector) {
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
 	irq_set->argsz = sizeof(irq_set_buf);;
-	if (!interrupt_vector)
+	if (!interrupt_vector) {
 		interrupt_vector = 1;
+	}
 	else if (interrupt_vector > MAX_INTERRUPT_VECTORS)
 		interrupt_vector = MAX_INTERRUPT_VECTORS + 1;
 
@@ -131,7 +132,7 @@ int vfio_disable_msix(int device_fd) {
 	char irq_set_buf[MSIX_IRQ_SET_BUF_LEN];
 
 	irq_set = (struct vfio_irq_set *) irq_set_buf;
-	irq_set->argsz = sizeof(struct vfio_irq_set);;
+	irq_set->argsz = sizeof(struct vfio_irq_set);
 	irq_set->count = 0;
 	irq_set->flags = VFIO_IRQ_SET_DATA_NONE | VFIO_IRQ_SET_ACTION_TRIGGER;
 	irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;

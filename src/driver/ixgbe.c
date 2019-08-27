@@ -31,7 +31,7 @@ const int MIN_MEMPOOL_ENTRIES = 4096;
 
 const int TX_CLEAN_BATCH = 32;
 
-const uint64_t INTERRUPT_INITIAL_INTERVAL = S_TO_NS(1);
+const uint64_t INTERRUPT_INITIAL_INTERVAL = 1000 * 1000 * 1000;
 
 // allocated for each rx queue, keeps state for the receive function
 struct ixgbe_rx_queue {
@@ -57,13 +57,13 @@ struct ixgbe_tx_queue {
 };
 
 /**
- * ixgbe_set_ivar - set the IVAR registers, mapping interrupt causes to vectors
+ * Set the IVAR registers, mapping interrupt causes to vectors
  * @param dev pointer to device
  * @param direction 0 for Rx, 1 for Tx
  * @param queue queue to map the corresponding interrupt to
  * @param msix_vector the vector to map to the corresponding queue
  */
-static void set_ivar(struct ixgbe_device *dev, s8 direction, u8 queue, u8 msix_vector) {
+static void set_ivar(struct ixgbe_device* dev, int8_t direction, int8_t queue, int8_t msix_vector) {
 	u32 ivar, index;
 	msix_vector |= IXGBE_IVAR_ALLOC_VAL;
 	index = ((16 * (queue & 1)) + (8 * direction));
@@ -502,13 +502,11 @@ static void reset_and_init(struct ixgbe_device* dev) {
  * @param pci_addr The PCI address of the device.
  * @param rx_queues The number of receiver queues.
  * @param tx_queues The number of transmitter queues.
- * @param itr The interrupt throttling rate.
  * @param interrupt_timeout The interrupt timeout in milliseconds (if set to -1 the interrupt timeout is disabled)
  * @param interrupts_enabled Whether to enable interrupts at all or not.
  * @return The initialized IXGBE device.
  */
-struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, uint32_t itr,
-		int interrupt_timeout, bool interrupts_enabled) {
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool interrupts_enabled) {
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
 	}
@@ -545,7 +543,7 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->ixy.set_promisc = ixgbe_set_promisc;
 	dev->ixy.get_link_speed = ixgbe_get_link_speed;
 	dev->ixy.interrupts.interrupts_enabled = interrupts_enabled;
-	dev->ixy.interrupts.itr_rate = itr;
+	dev->ixy.interrupts.itr_rate = 0x028;
 	dev->ixy.interrupts.timeout_ms = interrupt_timeout;
 
 	// Map BAR0 region
@@ -561,7 +559,6 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->rx_queues = calloc(rx_queues, sizeof(struct ixgbe_rx_queue) + sizeof(void*) * MAX_RX_QUEUE_ENTRIES);
 	dev->tx_queues = calloc(tx_queues, sizeof(struct ixgbe_tx_queue) + sizeof(void*) * MAX_TX_QUEUE_ENTRIES);
 	reset_and_init(dev);
-
 	return &dev->ixy;
 }
 
@@ -629,7 +626,7 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 
 	if (interrupts_enabled && interrupt->interrupt_enabled) {
 		vfio_epoll_wait(interrupt->vfio_epoll_fd, 10, dev->ixy.interrupts.timeout_ms);
-    }
+	}
 
 	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + queue_id;
 	uint16_t rx_index = queue->rx_index; // rx index we checked in the last run of this function
