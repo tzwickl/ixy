@@ -6,14 +6,14 @@
 #include <stdio.h>
 
 /**
- * Calculate packets per second based on the received number of packets and the elapsed time in nanoseconds since the
+ * Calculate packets per microsecond based on the received number of packets and the elapsed time in nanoseconds since the
  * last calculation.
  * @param received_pkts Number of received packets.
  * @param elapsed_time_nanos Time elapsed in nanoseconds since the last calculation.
- * @return Packets per second.
+ * @return Packets per microsecond.
  */
-static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
-	return (double) received_pkts / 1000000.0 / ((double) elapsed_time_nanos / 1000000000.0);
+static uint64_t ppms(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
+	return received_pkts / (elapsed_time_nanos / 1000000);
 }
 
 /**
@@ -27,14 +27,15 @@ static double mpps(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
 void check_interrupt(struct interrupt_queues *interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
 	struct interrupt_moving_avg *avg = &interrupt->moving_avg;
 	avg->sum -= avg->measured_rates[avg->index];
-	avg->measured_rates[avg->index] = mpps(interrupt->rx_pkts, diff);
+	avg->measured_rates[avg->index] = ppms(interrupt->rx_pkts, diff);
+	info("Rate %lu %lu %lu", avg->measured_rates[avg->index], interrupt->rx_pkts, diff);
 	avg->sum += avg->measured_rates[avg->index];
 	if (avg->length < MOVING_AVERAGE_RANGE) {
 		avg->length++;
 	}
 	avg->index = (avg->index + 1) % MOVING_AVERAGE_RANGE;
 	interrupt->rx_pkts = 0;
-	double average = avg->sum / avg->length;
+	uint64_t average = avg->sum / avg->length;
 	if (average > INTERRUPT_THRESHOLD) {
 		interrupt->interrupt_enabled = false;
 	} else if (buf_index == buf_size) {

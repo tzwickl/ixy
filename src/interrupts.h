@@ -7,13 +7,13 @@
 #include <stdbool.h>
 
 #define MOVING_AVERAGE_RANGE 5
-#define INTERRUPT_THRESHOLD 1.2
+#define INTERRUPT_THRESHOLD 1200
 
 struct interrupt_moving_avg {
 	uint32_t index; // The current index
 	uint32_t length; // The moving average length
-	double sum; // The moving average sum
-	double measured_rates[MOVING_AVERAGE_RANGE]; // The moving average window
+	uint64_t sum; // The moving average sum
+	uint64_t measured_rates[MOVING_AVERAGE_RANGE]; // The moving average window
 };
 
 struct interrupt_queues {
@@ -21,6 +21,7 @@ struct interrupt_queues {
 	int vfio_epoll_fd; // epoll fd
 	bool interrupt_enabled; // Whether interrupt for this queue is enabled or not
 	uint64_t last_time_checked; // Last time the interrupt flag was checked
+	uint64_t instr_counter; // Instruction counter to avoid unnecessary calls to monotonic_time
 	uint64_t rx_pkts; // The number of received packets since the last check
 	uint64_t interval; // The interval to check the interrupt flag
 	struct interrupt_moving_avg moving_avg; // The moving average of the hybrid interrupt

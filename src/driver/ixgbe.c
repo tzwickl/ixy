@@ -674,22 +674,25 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 	}
 
 	if (interrupts_enabled) {
-		bool int_en = interrupt->interrupt_enabled;
 		interrupt->rx_pkts += buf_index;
 
-		uint64_t diff = monotonic_time() - interrupt->last_time_checked;
-		if (diff > interrupt->interval) {
-			// every second
-			check_interrupt(interrupt, diff, buf_index, num_bufs);
-		}
+		if ((interrupt->instr_counter++ & 0xFFF) == 0) {
+			bool int_en = interrupt->interrupt_enabled;
+			uint64_t diff = monotonic_time() - interrupt->last_time_checked;
+			if (diff > interrupt->interval) {
+				// every second
+				check_interrupt(interrupt, diff, buf_index, num_bufs);
+			}
 
-		if (int_en != interrupt->interrupt_enabled) {
-			if (interrupt->interrupt_enabled) {
-				enable_interrupt(dev, queue_id);
-			} else {
-				disable_interrupt(dev, queue_id);
+			if (int_en != interrupt->interrupt_enabled) {
+				if (interrupt->interrupt_enabled) {
+					enable_interrupt(dev, queue_id);
+				} else {
+					disable_interrupt(dev, queue_id);
+				}
 			}
 		}
+
 	}
 
 	return buf_index; // number of packets stored in bufs; buf_index points to the next index
