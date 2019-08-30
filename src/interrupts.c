@@ -28,7 +28,6 @@ void check_interrupt(struct interrupt_queues *interrupt, uint64_t diff, uint32_t
 	struct interrupt_moving_avg *avg = &interrupt->moving_avg;
 	avg->sum -= avg->measured_rates[avg->index];
 	avg->measured_rates[avg->index] = ppms(interrupt->rx_pkts, diff);
-	info("Rate %lu %lu %lu", avg->measured_rates[avg->index], interrupt->rx_pkts, diff);
 	avg->sum += avg->measured_rates[avg->index];
 	if (avg->length < MOVING_AVERAGE_RANGE) {
 		avg->length++;
