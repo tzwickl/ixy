@@ -24,8 +24,8 @@ static uint64_t ppms(uint64_t received_pkts, uint64_t elapsed_time_nanos) {
  * @param buf_size The maximum buffer size.
  * @return Whether to disable NIC interrupts or not.
  */
-void check_interrupt(struct interrupt_queues *interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
-	struct interrupt_moving_avg *avg = &interrupt->moving_avg;
+void check_interrupt(struct interrupt_queues* interrupt, uint64_t diff, uint32_t buf_index, uint32_t buf_size) {
+	struct interrupt_moving_avg* avg = &interrupt->moving_avg;
 	avg->sum -= avg->measured_rates[avg->index];
 	avg->measured_rates[avg->index] = ppms(interrupt->rx_pkts, diff);
 	avg->sum += avg->measured_rates[avg->index];
