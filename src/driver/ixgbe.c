@@ -503,12 +503,12 @@ static void reset_and_init(struct ixgbe_device* dev) {
  * @param pci_addr The PCI address of the device.
  * @param rx_queues The number of receiver queues.
  * @param tx_queues The number of transmitter queues.
- * @param interrupt_timeout The interrupt timeout in milliseconds (if set to -1 the interrupt timeout is disabled)
- * @param interrupts_enabled Whether to enable interrupts at all or not.
+ * @param interrupt_timeout The interrupt timeout in milliseconds
+ * 	- if set to -1 the interrupt timeout is disabled
+ * 	- if set to 0 the interrupt is disabled entirely)
  * @return The initialized IXGBE device.
  */
-struct ixy_device*
-ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool interrupts_enabled) {
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout) {
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
 	}
@@ -544,7 +544,7 @@ ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int int
 	dev->ixy.read_stats = ixgbe_read_stats;
 	dev->ixy.set_promisc = ixgbe_set_promisc;
 	dev->ixy.get_link_speed = ixgbe_get_link_speed;
-	dev->ixy.interrupts.interrupts_enabled = interrupts_enabled;
+	dev->ixy.interrupts.interrupts_enabled = interrupt_timeout != 0;
 	dev->ixy.interrupts.itr_rate = 0x028;
 	dev->ixy.interrupts.timeout_ms = interrupt_timeout;
 
