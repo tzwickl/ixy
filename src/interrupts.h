@@ -30,7 +30,7 @@ struct interrupt_queues {
 struct interrupts {
 	bool interrupts_enabled; // Whether interrupts for this device are enabled or disabled.
 	uint32_t itr_rate; // The Interrupt Throttling Rate
-	struct interrupt_queues *queues; // Interrupt settings per queue
+	struct interrupt_queues* queues; // Interrupt settings per queue
 	uint8_t interrupt_type; // MSI or MSIX
 	int timeout_ms; // interrupt timeout in milliseconds (-1 to disable the timeout)
 };

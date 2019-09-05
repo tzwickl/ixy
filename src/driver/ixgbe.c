@@ -77,7 +77,7 @@ static void set_ivar(struct ixgbe_device* dev, int8_t direction, int8_t queue, i
  * Clear all interrupt masks for all queues.
  * @param dev The device.
  */
-static void clear_interrupts(struct ixgbe_device *dev) {
+static void clear_interrupts(struct ixgbe_device* dev) {
 	// Clear interrupt mask
 	set_reg32(dev->addr, IXGBE_EIMC, IXGBE_IRQ_CLEAR_MASK);
 	get_reg32(dev->addr, IXGBE_EICR);
@@ -88,7 +88,7 @@ static void clear_interrupts(struct ixgbe_device *dev) {
  * @param dev The device.
  * @param queue_id The ID of the queue to clear.
  */
-static void clear_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
+static void clear_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Clear interrupt mask
 	set_reg32(dev->addr, IXGBE_EIMC, 1 << queue_id);
 	get_reg32(dev->addr, IXGBE_EICR);
@@ -98,7 +98,7 @@ static void clear_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * Disable all interrupts for all queues.
  * @param dev The device.
  */
-static void disable_interrupts(struct ixgbe_device *dev) {
+static void disable_interrupts(struct ixgbe_device* dev) {
 	// Clear interrupt mask to stop from interrupts being generated
 	set_reg32(dev->addr, IXGBE_EIMS, 0x00000000);
 	clear_interrupts(dev);
@@ -109,7 +109,7 @@ static void disable_interrupts(struct ixgbe_device *dev) {
  * @param dev
  * @param queue_id The ID of the queue to disable.
  */
-static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
+static void disable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Clear interrupt mask to stop from interrupts being generated
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
 	mask &= ~(1 << queue_id);
@@ -123,7 +123,7 @@ static void disable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_msi_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
+static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between Tx and Rx interrupt causes and the EICR
 	// register by setting the IVAR[n] registers.
 	set_ivar(dev, 0, queue_id, 0);
@@ -155,7 +155,7 @@ static void enable_msi_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_msix_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
+static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
 	//throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
 	uint32_t gpie = get_reg32(dev->addr, IXGBE_GPIE);
@@ -206,7 +206,7 @@ static void enable_msix_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * @param dev The device.
  * @param queue_id The ID of the queue to enable.
  */
-static void enable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
+static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	if (!dev->ixy.interrupts.interrupts_enabled) {
 		return;
 	}
@@ -227,11 +227,11 @@ static void enable_interrupt(struct ixgbe_device *dev, uint16_t queue_id) {
  * Setup interrupts by enabling VFIO interrupts.
  * @param dev The device.
  */
-static void setup_interrupts(struct ixgbe_device *dev) {
+static void setup_interrupts(struct ixgbe_device* dev) {
 	if (!dev->ixy.interrupts.interrupts_enabled) {
 		return;
 	}
-	dev->ixy.interrupts.queues = (struct interrupt_queues *) malloc(dev->ixy.num_rx_queues * sizeof(struct interrupt_queues));
+	dev->ixy.interrupts.queues = (struct interrupt_queues*) malloc(dev->ixy.num_rx_queues * sizeof(struct interrupt_queues));
 	dev->ixy.interrupts.interrupt_type = vfio_setup_interrupt(dev->ixy.vfio_fd);
 	switch (dev->ixy.interrupts.interrupt_type) {
 		case VFIO_PCI_MSIX_IRQ_INDEX: {
@@ -275,7 +275,7 @@ static void init_link(struct ixgbe_device* dev) {
 
 static void start_rx_queue(struct ixgbe_device* dev, int queue_id) {
 	debug("starting rx queue %d", queue_id);
-	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + queue_id;
+	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*) (dev->rx_queues)) + queue_id;
 	// 2048 as pktbuf size is strictly speaking incorrect:
 	// we need a few headers (1 cacheline), so there's only 1984 bytes left for the device
 	// but the 82599 can only handle sizes in increments of 1 kb; but this is fine since our max packet size
@@ -309,7 +309,7 @@ static void start_rx_queue(struct ixgbe_device* dev, int queue_id) {
 
 static void start_tx_queue(struct ixgbe_device* dev, int queue_id) {
 	debug("starting tx queue %d", queue_id);
-	struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*)(dev->tx_queues)) + queue_id;
+	struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*) (dev->tx_queues)) + queue_id;
 	if (queue->num_entries & (queue->num_entries - 1)) {
 		error("number of queue entries must be a power of 2");
 	}
@@ -344,7 +344,8 @@ static void init_rx(struct ixgbe_device* dev) {
 	for (uint16_t i = 0; i < dev->ixy.num_rx_queues; i++) {
 		debug("initializing rx queue %d", i);
 		// enable advanced rx descriptors, we could also get away with legacy descriptors, but they aren't really easier
-		set_reg32(dev->addr, IXGBE_SRRCTL(i), (get_reg32(dev->addr, IXGBE_SRRCTL(i)) & ~IXGBE_SRRCTL_DESCTYPE_MASK) | IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF);
+		set_reg32(dev->addr, IXGBE_SRRCTL(i),
+				  (get_reg32(dev->addr, IXGBE_SRRCTL(i)) & ~IXGBE_SRRCTL_DESCTYPE_MASK) | IXGBE_SRRCTL_DESCTYPE_ADV_ONEBUF);
 		// drop_en causes the nic to drop packets if no rx descriptors are available instead of buffering them
 		// a single overflowing queue can fill up the whole buffer and impact operations if not setting this flag
 		set_flags32(dev->addr, IXGBE_SRRCTL(i), IXGBE_SRRCTL_DROP_EN);
@@ -363,7 +364,7 @@ static void init_rx(struct ixgbe_device* dev) {
 		set_reg32(dev->addr, IXGBE_RDH(i), 0);
 		set_reg32(dev->addr, IXGBE_RDT(i), 0);
 		// private data for the driver, 0-initialized
-		struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + i;
+		struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*) (dev->rx_queues)) + i;
 		queue->num_entries = NUM_RX_QUEUE_ENTRIES;
 		queue->rx_index = 0;
 		queue->descriptors = (union ixgbe_adv_rx_desc*) mem.virt;
@@ -422,7 +423,7 @@ static void init_tx(struct ixgbe_device* dev) {
 		set_reg32(dev->addr, IXGBE_TXDCTL(i), txdctl);
 
 		// private data for the driver, 0-initialized
-		struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*)(dev->tx_queues)) + i;
+		struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*) (dev->tx_queues)) + i;
 		queue->num_entries = NUM_TX_QUEUE_ENTRIES;
 		queue->descriptors = (union ixgbe_adv_tx_desc*) mem.virt;
 	}
@@ -502,11 +503,12 @@ static void reset_and_init(struct ixgbe_device* dev) {
  * @param pci_addr The PCI address of the device.
  * @param rx_queues The number of receiver queues.
  * @param tx_queues The number of transmitter queues.
- * @param interrupt_timeout The interrupt timeout in milliseconds (if set to -1 the interrupt timeout is disabled)
- * @param interrupts_enabled Whether to enable interrupts at all or not.
+ * @param interrupt_timeout The interrupt timeout in milliseconds
+ * 	- if set to -1 the interrupt timeout is disabled
+ * 	- if set to 0 the interrupt is disabled entirely)
  * @return The initialized IXGBE device.
  */
-struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout, bool interrupts_enabled) {
+struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t tx_queues, int interrupt_timeout) {
 	if (getuid()) {
 		warn("Not running as root, this will probably fail");
 	}
@@ -542,7 +544,7 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->ixy.read_stats = ixgbe_read_stats;
 	dev->ixy.set_promisc = ixgbe_set_promisc;
 	dev->ixy.get_link_speed = ixgbe_get_link_speed;
-	dev->ixy.interrupts.interrupts_enabled = interrupts_enabled;
+	dev->ixy.interrupts.interrupts_enabled = interrupt_timeout != 0;
 	dev->ixy.interrupts.itr_rate = 0x028;
 	dev->ixy.interrupts.timeout_ms = interrupt_timeout;
 
@@ -581,7 +583,7 @@ uint32_t ixgbe_get_link_speed(const struct ixy_device* ixy) {
 }
 
 void ixgbe_set_promisc(struct ixy_device* ixy, bool enabled) {
-	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);	
+	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
 	if (enabled) {
 		info("enabling promisc mode");
 		set_flags32(dev->addr, IXGBE_FCTRL, IXGBE_FCTRL_MPE | IXGBE_FCTRL_UPE);
@@ -608,7 +610,7 @@ void ixgbe_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 }
 
 // advance index with wrap-around, this line is the reason why we require a power of two for the queue size
-#define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
+#define wrap_ring(index, ring_size) (uint16_t)((index + 1) & (ring_size - 1))
 
 // section 1.8.2 and 7.1
 // try to receive a single packet if one is available, non-blocking
@@ -617,7 +619,7 @@ void ixgbe_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {
 	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
 
-	struct interrupt_queues *interrupt = NULL;
+	struct interrupt_queues* interrupt = NULL;
 	bool interrupts_enabled = ixy->interrupts.interrupts_enabled;
 
 	if (interrupts_enabled) {
@@ -628,7 +630,7 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		vfio_epoll_wait(interrupt->vfio_epoll_fd, 10, dev->ixy.interrupts.timeout_ms);
 	}
 
-	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*)(dev->rx_queues)) + queue_id;
+	struct ixgbe_rx_queue* queue = ((struct ixgbe_rx_queue*) (dev->rx_queues)) + queue_id;
 	uint16_t rx_index = queue->rx_index; // rx index we checked in the last run of this function
 	uint16_t last_rx_index = rx_index; // index of the descriptor we checked in the last iteration of the loop
 	uint32_t buf_index;
@@ -692,7 +694,6 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 				}
 			}
 		}
-
 	}
 
 	return buf_index; // number of packets stored in bufs; buf_index points to the next index
@@ -704,7 +705,7 @@ uint32_t ixgbe_rx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 // returns the number of packets transmitted, will not block when the queue is full
 uint32_t ixgbe_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_buf* bufs[], uint32_t num_bufs) {
 	struct ixgbe_device* dev = IXY_TO_IXGBE(ixy);
-	struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*)(dev->tx_queues)) + queue_id;
+	struct ixgbe_tx_queue* queue = ((struct ixgbe_tx_queue*) (dev->tx_queues)) + queue_id;
 	// the descriptor is explained in section 7.2.3.2.4
 	// we just use a struct copy & pasted from intel, but it basically has two formats (hence a union):
 	// 1. the write-back format which is written by the NIC once sending it is finished this is used in step 1
@@ -770,7 +771,8 @@ uint32_t ixgbe_tx_batch(struct ixy_device* ixy, uint16_t queue_id, struct pkt_bu
 		txd->read.buffer_addr = buf->buf_addr_phy + offsetof(struct pkt_buf, data);
 		// always the same flags: one buffer (EOP), advanced data descriptor, CRC offload, data length
 		txd->read.cmd_type_len =
-			IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA | buf->size;
+				IXGBE_ADVTXD_DCMD_EOP | IXGBE_ADVTXD_DCMD_RS | IXGBE_ADVTXD_DCMD_IFCS | IXGBE_ADVTXD_DCMD_DEXT | IXGBE_ADVTXD_DTYP_DATA |
+				buf->size;
 		// no fancy offloading stuff - only the total payload length
 		// implement offloading flags here:
 		// 	* ip checksum offloading is trivial: just set the offset
