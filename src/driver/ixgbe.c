@@ -115,7 +115,7 @@ static void disable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	mask &= ~(1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
 	clear_interrupt(dev, queue_id);
-	info("Using polling:");
+	debug("Using polling");
 }
 
 /**
@@ -130,12 +130,14 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 
 	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
 	// descriptor minimum threshold interrupt
+	// We don't use the minimum threshold interrupt
 
 	// Step 3: All interrupts should be set to 0b (no auto clear in the EIAC register). Following an
 	// interrupt, software might read the EICR register to check for the interrupt causes.
 	set_reg32(dev->addr, IXGBE_EIAC, 0x00000000);
 
 	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
+	// In our case we prefer not auto-masking the interrupts
 
 	// Step 5: Set the interrupt throttling in EITR[n] and GPIE according to the preferred mode of operation.
 	set_reg32(dev->addr, IXGBE_EITR(queue_id), dev->ixy.interrupts.itr_rate);
@@ -147,7 +149,7 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
 	mask |= (1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
-	info("Using MSI interrupts");
+	debug("Using MSI interrupts");
 }
 
 /**
@@ -157,7 +159,7 @@ static void enable_msi_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
  */
 static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	// Step 1: The software driver associates between interrupt causes and MSI-X vectors and the
-	//throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
+	// throttling timers EITR[n] by programming the IVAR[n] and IVAR_MISC registers.
 	uint32_t gpie = get_reg32(dev->addr, IXGBE_GPIE);
 	gpie |= IXGBE_GPIE_MSIX_MODE | IXGBE_GPIE_PBA_SUPPORT | IXGBE_GPIE_EIAME;
 	set_reg32(dev->addr, IXGBE_GPIE, gpie);
@@ -165,6 +167,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 
 	// Step 2: Program SRRCTL[n].RDMTS (per receive queue) if software uses the receive
 	// descriptor minimum threshold interrupt
+	// We don't use the minimum threshold interrupt
 
 	// Step 3: The EIAC[n] registers should be set to auto clear for transmit and receive interrupt
 	// causes (for best performance). The EIAC bits that control the other and TCP timer
@@ -172,8 +175,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	set_reg32(dev->addr, IXGBE_EIAC, IXGBE_EIMS_RTX_QUEUE);
 
 	// Step 4: Set the auto mask in the EIAM register according to the preferred mode of operation.
-	//set_reg32(dev->addr, IXGBE_EIAM_EX(0), 0xFFFFFFFF);
-	//set_reg32(dev->addr, IXGBE_EIAM_EX(1), 0xFFFFFFFF);
+	// In our case we prefer to not auto-mask the interrupts
 
 	// Step 5: Set the interrupt throttling in EITR[n] and GPIE according to the preferred mode of operation.
 	// 0x000 (0us) => ... INT/s
@@ -198,7 +200,7 @@ static void enable_msix_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 	u32 mask = get_reg32(dev->addr, IXGBE_EIMS);
 	mask |= (1 << queue_id);
 	set_reg32(dev->addr, IXGBE_EIMS, mask);
-	info("Using MSIX interrupts");
+	debug("Using MSIX interrupts");
 }
 
 /**
@@ -218,7 +220,7 @@ static void enable_interrupt(struct ixgbe_device* dev, uint16_t queue_id) {
 			enable_msi_interrupt(dev, queue_id);
 			break;
 		default:
-			error("Interrupt type not supported: %d", dev->ixy.interrupts.interrupt_type);
+			warn("Interrupt type not supported: %d", dev->ixy.interrupts.interrupt_type);
 			return;
 	}
 }
@@ -253,12 +255,13 @@ static void setup_interrupts(struct ixgbe_device* dev) {
 				dev->ixy.interrupts.queues[rx_queue].vfio_event_fd = vfio_event_fd;
 				dev->ixy.interrupts.queues[rx_queue].vfio_epoll_fd = vfio_epoll_fd;
 				dev->ixy.interrupts.queues[rx_queue].moving_avg.length = 0;
+				dev->ixy.interrupts.queues[rx_queue].moving_avg.index = 0;
 				dev->ixy.interrupts.queues[rx_queue].interval = INTERRUPT_INITIAL_INTERVAL;
 			}
 			break;
 		}
 		default:
-			error("Interrupt type not supported: %d", dev->ixy.interrupts.interrupt_type);
+			warn("Interrupt type not supported: %d", dev->ixy.interrupts.interrupt_type);
 			return;
 	}
 }
@@ -545,8 +548,14 @@ struct ixy_device* ixgbe_init(const char* pci_addr, uint16_t rx_queues, uint16_t
 	dev->ixy.set_promisc = ixgbe_set_promisc;
 	dev->ixy.get_link_speed = ixgbe_get_link_speed;
 	dev->ixy.interrupts.interrupts_enabled = interrupt_timeout != 0;
+	// 0x028 (10ys) => 97600 INT/s
 	dev->ixy.interrupts.itr_rate = 0x028;
 	dev->ixy.interrupts.timeout_ms = interrupt_timeout;
+
+	if (!dev->ixy.vfio && interrupt_timeout != 0) {
+		warn("Interrupts requested but VFIO not available: Disabling Interrupts!");
+		dev->ixy.interrupts.interrupts_enabled = false;
+	}
 
 	// Map BAR0 region
 	if (dev->ixy.vfio) {
@@ -610,7 +619,7 @@ void ixgbe_read_stats(struct ixy_device* ixy, struct device_stats* stats) {
 }
 
 // advance index with wrap-around, this line is the reason why we require a power of two for the queue size
-#define wrap_ring(index, ring_size) (uint16_t)((index + 1) & (ring_size - 1))
+#define wrap_ring(index, ring_size) (uint16_t) ((index + 1) & (ring_size - 1))
 
 // section 1.8.2 and 7.1
 // try to receive a single packet if one is available, non-blocking
