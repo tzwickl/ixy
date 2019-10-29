@@ -5,6 +5,7 @@
 DEVICE1_ID="0000:03:00.0"
 DEVICE2_ID="0000:03:00.1"
 IXY_PATH="/root/ixy-interrupt"
+IXY_RUST_PATH="/root/ixy.rs-interrupt"
 RESULT_FILE=result.csv
 PERF_FILE=perf.stat
 POWERTOP_FILE=powertop.csv
@@ -41,6 +42,26 @@ function build_ixy {
     make
     chmod 774 setup-hugetlbfs.sh
     ./setup-hugetlbfs.sh
+}
+
+# Build Ixy Rust
+# @param 1: The path to Ixy Rust
+function build_ixy_rust {
+    cd ${1};
+    chmod 774 setup-hugetlbfs.sh
+    ./setup-hugetlbfs.sh
+    /root/.cargo/bin/cargo build --release --all-targets
+}
+
+# Start Ixy Rust forwarder
+# @param 1: The path to Ixy Rust
+# @param 2: The first device ID
+# @param 3: The second device ID
+# @return: The PID of the ixy forwarder
+function start_ixy_rust_forwarder {
+    cd ${1};
+    nohup /root/.cargo/bin/cargo run --release --example forwarder ${2} ${3} > ixy.log 2>&1&
+    echo $!
 }
 
 # Start Ixy forwarder
@@ -482,6 +503,7 @@ function experiment3 {
     DIST=${5:-"Uniform"} # Uniform or Poisson distribution of packets
     printf "Running experiment 3 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
+    # IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_rust_forwarder \"$IXY_RUST_PATH\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
     ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE1_ID\""
@@ -523,6 +545,7 @@ function cleanup {
 > ${RESULT_FILE}
 trap cleanup EXIT
 ssh omanyte "$(typeset -f); build_ixy \"$IXY_PATH\""
+# ssh omanyte "$(typeset -f); build_ixy_rust \"$IXY_RUST_PATH\""
 ###
 
 "$@"
