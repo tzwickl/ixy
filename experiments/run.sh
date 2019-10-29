@@ -4,7 +4,7 @@
 
 DEVICE1_ID="0000:03:00.0"
 DEVICE2_ID="0000:03:00.1"
-IXY_PATH="/tmp/ixy"
+IXY_PATH="/root/ixy-interrupt"
 RESULT_FILE=result.csv
 PERF_FILE=perf.stat
 POWERTOP_FILE=powertop.csv
@@ -45,13 +45,12 @@ function build_ixy {
 
 # Start Ixy forwarder
 # @param 1: The path to Ixy
-# @param 2: The ITR
-# @param 3: The first device ID
-# @param 4: The second device ID
+# @param 2: The first device ID
+# @param 3: The second device ID
 # @return: The PID of the ixy forwarder
 function start_ixy_forwarder {
     cd ${1};
-    nohup ./ixy-fwd ${2} ${3} ${4} > ixy.log 2>&1&
+    nohup ./ixy-fwd ${2} ${3} > ixy.log 2>&1&
     echo $!
 }
 
@@ -128,7 +127,7 @@ function start_moonsniff {
     ./setup-hugetlbfs.sh > /dev/null 2>&1&
     rm *.mscap;
     rm *.csv;
-    nohup sh -c "./build/MoonGen examples/moonsniff/sniffer.lua --seq-offset 50 1 0 2> /dev/null | tee moonsniff.log" > /dev/null &
+    nohup sh -c "sleep 3 && ./build/MoonGen examples/moonsniff/sniffer.lua --seq-offset 50 1 0 2> /dev/null | tee moonsniff.log" > /dev/null &
     echo $!
 }
 
@@ -194,8 +193,8 @@ function run_moongen {
 # @param 3: Time Limit
 function start_powertop {
     cd ${1};
-    sleep=$(($3 + 1))
-    nohup bash -c "sleep 1 && powertop --csv=${2} --time=1 --iteration=${sleep} 2>&1" > /dev/null &
+    sleep=$(($3))
+    nohup bash -c "sleep 3 && powertop --csv=${2} --time=1 --iteration=${sleep} 2>&1" > /dev/null &
     echo $!
 }
 
@@ -284,8 +283,8 @@ function stop_powertop {
 # @return: The PID of perf
 function start_perf {
     cd ${1};
-    sleep=$(($3 + 4))
-    nohup sh -c "sleep 1 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles,irq:irq_handler_entry -- sleep ${sleep}" > /dev/null &
+    sleep=$(($3))
+    nohup sh -c "sleep 2 && perf stat -a -g --per-core --cpu=${4} -o ${2} -e cycles,irq:irq_handler_entry -- sleep ${sleep}" > /dev/null &
     echo $!
 }
 
@@ -379,8 +378,13 @@ function run_experiment2 {
         ssh omanyte "$(typeset -f); parse_powertop \"$IXY_PATH\" \"$POWERTOP_FILE\" \"$POWERTOP_RESULT_FILE\""
         download_powertop ${IXY_PATH} ${POWERTOP_RESULT_FILE} powertop-${rate}.csv
         counter=$(ssh omanyte "$(typeset -f); parse_interrupts \"$DEVICE1_ID\"")
-        interrupts="$(($counter-$oldCounter))"
-        oldCounter=${counter};
+        if [[ "$counter" =~ ^[0-9]+$ && "$oldCounter" =~ ^[0-9]+$ ]]
+        then
+            interrupts="$(($counter-$oldCounter))"
+            oldCounter=${counter};
+        else
+            interrupts=0
+        fi
         eval ${packets}
         eval ${cpuCycles}
         if [[ ${#CPUS} -eq 1 ]]; then
@@ -455,6 +459,29 @@ function experiment2 {
     DIST=${6:-"Uniform"} # Uniform or Poisson distribution of packets
     printf "Running experiment 1 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u, ITR %s\n" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}" "${ITR}"
     IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$ITR\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
+    sleep 2
+    ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$IXY_PID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE1_ID\""
+    ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE2_ID\""
+    sleep 2
+    run_experiment2 ${START_RATE} ${STEP_RATE} ${MAX_RATE} ${TIME_LIMIT} ${DIST}
+}
+
+# Ping
+# @param 1: Start rate
+# @param 2: Step size
+# @param 3: Max rate
+# @param 4: Time limit
+# @param 6: Poisson or Uniform distribution of packets. Default Uniform
+function experiment3 {
+    CPUS="1";
+    START_RATE=${1:-$START_RATE}
+    STEP_RATE=${2:-$STEP_RATE}
+    MAX_RATE=${3:-$MAX_RATE}
+    TIME_LIMIT=${4:-$TIME_LIMIT}
+    DIST=${5:-"Uniform"} # Uniform or Poisson distribution of packets
+    printf "Running experiment 3 with %s distribution: start rate %f, step rate %f, max rate %f, time limit %u" "${DIST}" "${START_RATE}" "${STEP_RATE}" "${MAX_RATE}" "${TIME_LIMIT}"
+    IXY_PID=$(ssh omanyte "$(typeset -f); start_ixy_forwarder \"$IXY_PATH\" \"$DEVICE1_ID\" \"$DEVICE2_ID\"")
     sleep 2
     ssh omanyte "$(typeset -f); set_cpu_affinity 2 \"$IXY_PID\""
     ssh omanyte "$(typeset -f); set_interrupt_affinity 80 \"$DEVICE1_ID\""
