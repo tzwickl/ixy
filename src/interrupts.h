@@ -7,7 +7,7 @@
 #include <stdbool.h>
 
 #define MOVING_AVERAGE_RANGE 5
-#define INTERRUPT_THRESHOLD 1200
+#define INTERRUPT_THRESHOLD 2400
 
 struct interrupt_moving_avg {
 	uint32_t index; // The current index
